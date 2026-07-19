@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Mapa de Stands – Feria Julio 2026</title>
+<title>Mapa de Stands – Feria Septiembre 2026</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
@@ -110,8 +110,8 @@
   .occ-bar-seg#occSegSenado { background: #ffd60a; }
   .occ-bar-seg#occSegDisp   { background: #e5e5ea; }
   .occ-bar-legend { display: flex; justify-content: space-between; margin-top: 6px; }
-  .occ-bar-item { display: flex; align-items: center; gap: 4px; font-size: 10px; color: rgba(255,255,255,.45); font-weight: 500; }
-  .occ-bar-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .occ-bar-item { display: flex; align-items: center; gap: 5px; font-size: 14px; color: rgba(255,255,255,.65); font-weight: 600; }
+  .occ-bar-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 
   /* ── STATS (oculto) ── */
   .stats { display: none; }
@@ -153,6 +153,7 @@
   .filter-btn[data-f="Pagado"].active     { background: #1a7f3c; color: white; border-color: #1a7f3c; }
   .filter-btn[data-f="Señado"].active     { background: #a07800; color: white; border-color: #a07800; }
   .filter-btn[data-f="Disponible"].active { background: #5e5ce6; color: white; border-color: #5e5ce6; }
+  .filter-btn[data-f="mobiliario"].active { background: #0d9488; color: white; border-color: #0d9488; }
   .filter-btn.mis-ventas-btn.active       { background: var(--accent); color: white; border-color: var(--accent); }
 
   /* ── SEARCH ── */
@@ -165,8 +166,9 @@
   .search-wrap input::placeholder { color: var(--text3); }
 
   /* ── MAP ── */
-  .floor { display: none; }
-  .floor.active { display: block; }
+  .floor { display: none; opacity: 0; }
+  .floor.active { display: block; opacity: 1; animation: floorFade .22s ease; }
+  @keyframes floorFade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
   .map-scroll { overflow: auto; padding: 6px; -webkit-overflow-scrolling: touch; }
   .map-inner { transform-origin: top left; width: max-content; transition: transform 0.15s ease; position: relative; }
   .map-bg { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 0; }
@@ -175,7 +177,7 @@
   /* ── STANDS ── */
   .stand {
     border-radius: 10px; padding: 3px 3px 2px; cursor: pointer;
-    transition: transform .15s cubic-bezier(.34,1.56,.64,1), box-shadow .15s;
+    transition: transform .15s cubic-bezier(.34,1.56,.64,1), box-shadow .15s, opacity .22s ease;
     border: 1.5px solid transparent;
     width: 136px; height: 62px;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -206,8 +208,9 @@
   .empty { min-width: 136px; min-height: 62px; background: transparent; }
 
   /* ── BADGES ── */
-  .contrato-badge { position: absolute; top: 2px; right: 4px; font-size: 13px; line-height: 1; z-index: 2; pointer-events: none; }
-  .mob-badge      { position: absolute; top: 2px; left: 4px;  font-size: 13px; line-height: 1; z-index: 2; pointer-events: none; }
+  .contrato-badge { position: absolute; top: 2px; right: 4px; font-size: 17px; line-height: 1; z-index: 2; pointer-events: none; }
+  .mob-badge      { position: absolute; top: 2px; left: 4px;  font-size: 17px; line-height: 1; z-index: 2; pointer-events: none; }
+  .com-badge      { position: absolute; bottom: 2px; right: 4px; font-size: 15px; line-height: 1; z-index: 2; pointer-events: none; }
 
   /* ── LEGEND ── */
   .legend {
@@ -266,7 +269,9 @@
   .modal-badge[data-e="Disponible"] { background: #eeeeff; color: #3730a3; border: 1.5px solid #5e5ce6; }
   .modal-badge[data-e="Excedido"]   { background: #ffe4d5; color: #3d1500; }
   .modal h2     { font-size: 28px; font-weight: 700; letter-spacing: -.5px; color: var(--text); }
-  .modal-nombre { font-size: 17px; font-weight: 600; color: var(--text); margin-top: 6px; }
+  .modal-nombre-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  .modal-nombre { font-size: 17px; font-weight: 600; color: var(--text); }
+  .modal-nuevo-badge { background: #d1f5de; color: #0a3d1f; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px; letter-spacing: .3px; }
   .modal-rubro  { font-size: 14px; color: var(--text3); margin-top: 3px; }
   .modal-zona   { font-size: 11px; color: var(--text3); margin-top: 3px; }
   .modal-tel {
@@ -371,7 +376,7 @@
   .assign-selected-pill button { background: none; border: none; font-size: 18px; color: #7c3aed; cursor: pointer; padding: 0; line-height: 1; }
   .assign-btn { width: 100%; padding: 10px; background: #7c3aed; color: white; border: none; border-radius: var(--radius-sm); font-size: 14px; font-weight: 600; font-family: var(--font); cursor: pointer; transition: background .18s; }
   .assign-btn:active { background: #6d28d9; }
-  .assign-btn:disabled { background: #c4b5fd; cursor: not-allowed; }
+  .assign-btn:disabled { background: #c4b5fd; color: #4c1d95; cursor: not-allowed; }
   .assign-msg { font-size: 12px; font-weight: 600; text-align: center; margin-top: 8px; min-height: 16px; }
   .assign-msg.ok  { color: #15803d; }
   .assign-msg.err { color: #ff3b30; }
@@ -413,6 +418,24 @@
   .mob-readonly-title { font-size: 10px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: .4px; margin-bottom: 6px; }
   .mob-readonly-items { display: flex; flex-wrap: wrap; gap: 6px; }
   .mob-readonly-chip { padding: 3px 10px; background: white; border: 1px solid var(--border); border-radius: 100px; font-size: 12px; font-weight: 500; color: var(--text); }
+
+  /* ── COMENTARIOS (icono en sticky header + panel aparte) ── */
+  .comentarios-icon-btn {
+    position: relative; background: var(--bg); border: none; border-radius: var(--radius-sm);
+    width: 30px; height: 30px; font-size: 15px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .comentarios-icon-btn:active { background: #e5e5ea; }
+  .comentarios-icon-dot {
+    position: absolute; top: 3px; right: 3px; width: 7px; height: 7px;
+    border-radius: 50%; background: var(--accent);
+  }
+  .comentarios-textarea { width: 100%; min-height: 120px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 14px; font-family: var(--font); color: var(--text); background: var(--bg); resize: vertical; }
+  .comentarios-btn { margin-top: 12px; width: 100%; padding: 10px; border: none; border-radius: var(--radius-sm); background: var(--accent); color: white; font-size: 14px; font-weight: 600; font-family: var(--font); cursor: pointer; }
+  .comentarios-btn:disabled { opacity: .5; cursor: default; }
+  .comentarios-msg { margin-top: 8px; font-size: 12px; min-height: 14px; }
+  .comentarios-msg.ok  { color: #1a7f3c; }
+  .comentarios-msg.err { color: #b91c1c; }
   .mob-open-btn { width: 100%; margin-top: 10px; padding: 9px; background: var(--bg); color: var(--accent); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; font-family: var(--font); cursor: pointer; transition: background .18s; }
   .mob-open-btn:active { background: #e5e5ea; }
 
@@ -437,7 +460,7 @@
   .mob-adicional-total { font-size: 14px; font-weight: 700; color: #15803d; margin-top: 6px; }
   .mob-adicional-btn { width: 100%; padding: 10px; background: #15803d; color: white; border: none; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; font-family: var(--font); cursor: pointer; transition: background .18s; margin-top: 4px; }
   .mob-adicional-btn:active { background: #166534; }
-  .mob-adicional-btn:disabled { background: #86efac; cursor: not-allowed; }
+  .mob-adicional-btn:disabled { background: #86efac; color: #14532d; cursor: not-allowed; }
   .mob-adicional-msg { font-size: 12px; font-weight: 600; text-align: center; margin-top: 8px; min-height: 16px; }
   .mob-adicional-msg.ok  { color: #15803d; }
   .mob-adicional-msg.err { color: #ff3b30; }
@@ -447,8 +470,10 @@
     display: none; position: fixed; inset: 0; z-index: 500;
     background: rgba(0,0,0,.45); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
     align-items: center; justify-content: center; flex-direction: column; gap: 14px;
+    opacity: 0; transition: opacity .18s ease;
   }
   #loadingOverlay.visible { display: flex; }
+  #loadingOverlay.visible.shown { opacity: 1; }
   .loading-card {
     background: #fff; border-radius: 18px; padding: 24px 32px;
     display: flex; flex-direction: column; align-items: center; gap: 14px;
@@ -465,6 +490,14 @@
   .loading-text { font-size: 14px; font-weight: 600; color: var(--text2); text-align: center; }
   .loading-bar-wrap { width: 140px; height: 4px; background: #e5e5ea; border-radius: 2px; overflow: hidden; }
   .loading-bar { height: 100%; width: 0%; background: var(--accent); border-radius: 2px; transition: width .4s ease; }
+
+  /* ── SPINNER INLINE (estado "guardando" dentro de un botón) ── */
+  .btn-spinner {
+    width: 14px; height: 14px; border-radius: 50%;
+    border: 2px solid currentColor; border-right-color: transparent;
+    opacity: .85; display: inline-block; vertical-align: -2.5px; margin-right: 7px;
+    animation: spin .6s linear infinite;
+  }
 
   /* ── MODAL sticky header ── */
   .modal-sticky-header {
@@ -548,6 +581,19 @@
   .pago-msg { font-size: 12px; font-weight: 600; text-align: center; min-height: 16px; }
   .pago-msg.ok  { color: #15803d; }
   .pago-msg.err { color: #ff3b30; }
+
+  /* ── ACORDEÓN (secciones colapsables del modal) ── */
+  .acc-header {
+    display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent;
+  }
+  .acc-header-left { display: flex; align-items: center; gap: 6px; }
+  .acc-summary { font-size: 11px; font-weight: 600; opacity: .75; text-transform: none; letter-spacing: 0; }
+  .acc-chevron { font-size: 12px; transition: transform .2s ease; flex-shrink: 0; }
+  .acc-header.open .acc-chevron { transform: rotate(180deg); }
+  .acc-body { display: none; overflow: hidden; }
+  .acc-body.open { display: block; animation: accOpen .18s ease; }
+  @keyframes accOpen { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
 </style>
 </head>
 <body>
@@ -555,8 +601,8 @@
 <!-- ── PANTALLA DE LOGIN ── -->
 <div id="loginScreen">
   <div class="login-card">
-    <div class="login-logo"><img src="https://raw.githubusercontent.com/agazzane/Mapa-Feria-Julio/main/SUCOVI.jpg" style="width:64px;height:64px;border-radius:16px;object-fit:cover;"></div>
-    <div class="login-title">Feria Julio 2026</div>
+    <div class="login-logo"><img src="https://raw.githubusercontent.com/agazzane/Mapa-Feria-Septiembre/main/SUCOVI.jpg" style="width:64px;height:64px;border-radius:16px;object-fit:cover;"></div>
+    <div class="login-title">Feria Septiembre 2026</div>
     <div class="login-sub">Mapa de Stands · <span id="loginVersion"></span></div>
 
     <div class="login-field">
@@ -586,9 +632,9 @@
 </div>
 
 <header>
-  <img src="https://raw.githubusercontent.com/agazzane/Mapa-Feria-Julio/main/SUCOVI.jpg" class="header-logo-sq" style="object-fit:cover;">
+  <img src="https://raw.githubusercontent.com/agazzane/Mapa-Feria-Septiembre/main/SUCOVI.jpg" class="header-logo-sq" style="object-fit:cover;">
   <div class="header-text">
-    <h1>Feria Julio 2026 <span id="headerVersion"></span></h1>
+    <h1>Feria Septiembre 2026 <span id="headerVersion"></span></h1>
     <p id="subtitle">Sincronizando datos...</p>
   </div>
   <button class="login-user-pill" id="userPill" onclick="cerrarSesion()" style="display:none">👤 <span id="userPillName"></span><span id="userPerfilBadge" style="display:none;margin-left:6px;font-size:10px;font-weight:700;background:rgba(0,0,0,.08);border-radius:10px;padding:1px 6px;color:#3a3a3c"></span> · Salir</button>
@@ -636,6 +682,7 @@
   <button class="filter-btn"        data-f="Pagado"     onclick="setFilter('Pagado', this)">✅ Pagado</button>
   <button class="filter-btn"        data-f="Señado"     onclick="setFilter('Señado', this)">⭐ Señado</button>
   <button class="filter-btn"        data-f="Disponible" onclick="setFilter('Disponible', this)">🔓 Disponible</button>
+  <button class="filter-btn"        data-f="mobiliario" onclick="setFilter('mobiliario', this)">🪑 Con mobiliario</button>
   <button class="filter-btn mis-ventas-btn" id="misVentasBtn" onclick="toggleMisVentas(this)">👤 Mis ventas</button>
 </div>
 
@@ -728,6 +775,7 @@
   <div class="leg-item"><div class="leg-dot" style="background:var(--excedido)"></div> Excedido</div>
   <div class="leg-item"><span style="font-size:15px;line-height:1">✍️</span> Contrato firmado</div>
   <div class="leg-item"><span style="font-size:15px;line-height:1">🪑</span> Tiene mobiliario</div>
+  <div class="leg-item"><span style="font-size:15px;line-height:1">📝</span> Tiene comentario</div>
 </div>
 
 <div class="zoom-controls">
@@ -755,13 +803,19 @@
       <span class="modal-sticky-num" id="modalStickyNum">Stand —</span>
       <div style="display:flex;align-items:center;gap:8px">
         <span class="modal-sticky-badge" id="modalStickyBadge" data-e=""></span>
+        <button class="comentarios-icon-btn" id="comentariosIconBtn" onclick="openComentariosPanel()" style="display:none" title="Comentarios">
+          📝<span class="comentarios-icon-dot" id="comentariosIconDot" style="display:none"></span>
+        </button>
         <button class="modal-close" style="position:static;float:none;margin:0" onclick="closeModal()">×</button>
       </div>
     </div>
 
     <!-- Panel principal -->
     <div class="main-panel" id="mainPanel">
-    <div class="modal-nombre" id="modalNombre"></div>
+    <div class="modal-nombre-row">
+      <span class="modal-nombre" id="modalNombre"></span>
+      <span class="modal-nuevo-badge" id="modalNuevoBadge" style="display:none">NUEVO</span>
+    </div>
     <div class="modal-rubro"  id="modalRubro"></div>
     <div class="modal-zona"   id="modalZona"></div>
     <!-- WHATSAPP -->
@@ -847,9 +901,52 @@
       <div class="mob-readonly-items" id="mobReadonlyItems"></div>
     </div>
 
+    <!-- PAGOS: historial colapsable (Pagado) / formulario para cargar el próximo pago (Señado) -->
+    <div class="pagos-section" id="pagosSection" style="display:none">
+      <div class="pagos-title acc-header" id="pagosHeader" onclick="toggleAcc('pagosHeader','pagosBody')">
+        <span class="acc-header-left">💳 Pagos</span>
+        <span class="acc-chevron">▾</span>
+      </div>
+      <div class="acc-body" id="pagosBody">
+        <div class="pagos-list" id="pagosList"></div>
+        <div class="pago-form" id="pagoForm" style="display:none">
+          <div class="pago-form-title" id="pagoFormTitle">Cargar Pago 1</div>
+          <div class="pago-input-row">
+            <div class="pago-input-group">
+              <label class="pago-label">Monto ($)</label>
+              <input type="number" class="pago-input" id="pagoMonto" placeholder="0" min="1">
+            </div>
+            <div class="pago-input-group">
+              <label class="pago-label">Medio de pago</label>
+              <div class="pago-select-wrap">
+                <select class="pago-select" id="pagoMedio">
+                  <option value="">Cargando...</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <!-- Combo vendedor: solo visible para perfil Admin (3) -->
+          <div class="pago-input-group" id="pagoVendedorGroup" style="display:none;margin-top:4px">
+            <label class="pago-label">Registrar en nombre de</label>
+            <div class="pago-select-wrap">
+              <select class="pago-select" id="pagoVendedor">
+                <option value="">— Elegí vendedor —</option>
+              </select>
+            </div>
+          </div>
+          <button class="pago-btn" id="pagoBtn" onclick="cargarPago()">Registrar pago</button>
+          <div class="pago-msg" id="pagoMsg"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- VENTA MOB ADICIONAL (solo stands Pagados, perfil 1) -->
     <div class="mob-adicional-section" id="mobAdicionalSection" style="display:none">
-      <div class="mob-adicional-title">🪑➕ Vender Mobiliario Adicional</div>
+      <div class="mob-adicional-title acc-header" id="mobAdicionalHeader" onclick="toggleAcc('mobAdicionalHeader','mobAdicionalBody')">
+        <span class="acc-header-left">🪑➕ Vender Mobiliario Adicional</span>
+        <span class="acc-chevron">▾</span>
+      </div>
+      <div class="acc-body" id="mobAdicionalBody">
       <button class="mob-adicional-open-btn" onclick="openMobAdicionalPanel()">🪑 Seleccionar mobiliario <span id="mobAdicionalBtnLabel"></span></button>
       <div class="mob-adicional-summary" id="mobAdicionalSummary">
         <div class="mob-adicional-summary-label">Mobiliario seleccionado</div>
@@ -875,42 +972,20 @@
       </div>
       <button class="mob-adicional-btn" id="mobAdicionalBtn" onclick="venderMobAdicional()" disabled>Registrar venta de mobiliario</button>
       <div class="mob-adicional-msg" id="mobAdicionalMsg"></div>
-    </div>
-
-    <!-- CARGAR PAGO (solo cuando el stand está Señado) -->
-    <div class="pagos-section" id="pagosSection" style="display:none">
-      <div class="pagos-title">💳 Pagos</div>
-      <div class="pagos-list" id="pagosList"></div>
-      <div class="pago-form" id="pagoForm" style="display:none">
-        <div class="pago-form-title" id="pagoFormTitle">Cargar Pago 1</div>
-        <div class="pago-input-row">
-          <div class="pago-input-group">
-            <label class="pago-label">Monto ($)</label>
-            <input type="number" class="pago-input" id="pagoMonto" placeholder="0" min="1">
-          </div>
-          <div class="pago-input-group">
-            <label class="pago-label">Medio de pago</label>
-            <div class="pago-select-wrap">
-              <select class="pago-select" id="pagoMedio">
-                <option value="">Cargando...</option>
-              </select>
-            </div>
-          </div>
-        </div>
-        <!-- Combo vendedor: solo visible para perfil Admin (3) -->
-        <div class="pago-input-group" id="pagoVendedorGroup" style="display:none;margin-top:4px">
-          <label class="pago-label">Registrar en nombre de</label>
-          <div class="pago-select-wrap">
-            <select class="pago-select" id="pagoVendedor">
-              <option value="">— Elegí vendedor —</option>
-            </select>
-          </div>
-        </div>
-        <button class="pago-btn" id="pagoBtn" onclick="cargarPago()">Registrar pago</button>
-        <div class="pago-msg" id="pagoMsg"></div>
       </div>
     </div>
+
+    <!-- COMENTARIOS (texto libre, solo perfil 1 y 3, no en Disponible) -->
     </div><!-- /.main-panel -->
+    <div class="mob-panel" id="comentariosPanel">
+      <div class="mob-header">
+        <button class="mob-back" onclick="closeComentariosPanel()">← Volver</button>
+        <div class="mob-title">📝 Comentarios</div>
+      </div>
+      <textarea class="comentarios-textarea" id="comentariosTexto" placeholder="Escribí un comentario para este stand..." maxlength="500" oninput="checkComentariosBtn()"></textarea>
+      <button class="comentarios-btn" id="comentariosBtn" onclick="guardarComentario()" disabled>Guardar comentario</button>
+      <div class="comentarios-msg" id="comentariosMsg"></div>
+    </div>
 
     <!-- Panel de mobiliario (reemplaza al main-panel al abrirse) -->
     <div class="mob-panel" id="mobPanel">
@@ -1003,7 +1078,7 @@ let lastTap = 0;
 document.addEventListener('touchend', e => { const now=Date.now(); if(now-lastTap<300) e.preventDefault(); lastTap=now; }, {passive:false});
 
 // ── VERSIÓN DE LA APP ────────────────────────────────────────────────────────
-const APP_VERSION = 'v5.0';   // ← cambiá solo acá
+const APP_VERSION = 'v1.0';   // ← cambiá solo acá
 document.addEventListener('DOMContentLoaded', () => {
   const lv = document.getElementById('loginVersion');
   const hv = document.getElementById('headerVersion');
@@ -1023,34 +1098,51 @@ let PRECIOS_MOB    = {};   // { 'Mesa': 1500, 'Pupitre Doble': 2000, ... }
 async function load() {
   if (!modalLocked) showLoading('Cargando mapa...');
   try {
+    // Estas 4 listas casi no cambian durante la feria: si ya las tenemos en
+    // memoria, no las volvemos a pedir. El mapa (estado de los stands) sí se
+    // pide siempre, para mantener la sincronización entre usuarios.
+    const needFeriantes = FERIANTES_LIST.length === 0;
+    const needPrecios   = Object.keys(PRECIOS_MOB).length === 0;
+    const needUsuarios  = VENDEDORES_LIST.length === 0;
+    const needMedios    = MEDIOS_PAGO.length === 0;
+
     const [resMap, resFeriantes, resPrecios, resUsuarios, resMedios] = await Promise.all([
       fetch(API_URL),
-      fetch(API_URL + '?tipo=feriantes'),
-      fetch(API_URL + '?tipo=precios'),
-      fetch(API_URL + '?tipo=usuarios'),
-      fetch(API_URL + '?tipo=medios')
+      needFeriantes ? fetch(API_URL + '?tipo=feriantes') : Promise.resolve(null),
+      needPrecios   ? fetch(API_URL + '?tipo=precios')   : Promise.resolve(null),
+      needUsuarios  ? fetch(API_URL + '?tipo=usuarios')  : Promise.resolve(null),
+      needMedios    ? fetch(API_URL + '?tipo=medios')    : Promise.resolve(null)
     ]);
     FULL_DATA = await resMap.json();
-    const ferData = await resFeriantes.json();
-    if (ferData.ok && ferData.feriantes) {
-      FERIANTES_LIST = ferData.feriantes;
+    if (resFeriantes) {
+      const ferData = await resFeriantes.json();
+      if (ferData.ok && ferData.feriantes) {
+        FERIANTES_LIST = ferData.feriantes;
+      }
     }
-    const precData = await resPrecios.json();
-    if (precData.ok && precData.precios) {
-      PRECIOS_MOB = precData.precios;
+    if (resPrecios) {
+      const precData = await resPrecios.json();
+      if (precData.ok && precData.precios) {
+        PRECIOS_MOB = precData.precios;
+      }
     }
-    // Usuarios/vendedores: se cargan siempre acá para que el combo Admin
-    // esté disponible independientemente de si hay sesión guardada o no
-    const usrData = await resUsuarios.json();
-    if (usrData.ok && usrData.usuarios) {
-      VENDEDORES_LIST = usrData.usuarios
-        .filter(u => u.perfil === 1)
-        .map(u => u.nombre);
+    // Usuarios/vendedores: se cargan si todavía no están, para que el combo
+    // Admin esté disponible independientemente de si hay sesión guardada o no
+    if (resUsuarios) {
+      const usrData = await resUsuarios.json();
+      if (usrData.ok && usrData.usuarios) {
+        VENDEDORES_LIST = usrData.usuarios
+          .filter(u => u.perfil === 1)
+          .map(u => u.nombre);
+      }
     }
-    // Medios de pago: se cargan acá para que no haya fetch al abrir el primer modal
-    const medData = await resMedios.json();
-    if (medData.ok && medData.medios) {
-      MEDIOS_PAGO = medData.medios;
+    // Medios de pago: se cargan si todavía no están, para que no haya fetch
+    // adicional al abrir el primer modal
+    if (resMedios) {
+      const medData = await resMedios.json();
+      if (medData.ok && medData.medios) {
+        MEDIOS_PAGO = medData.medios;
+      }
     }
     buildGrid('grid-pb', FULL_DATA.pbData);
     buildGrid('grid-pa', FULL_DATA.paData);
@@ -1092,9 +1184,11 @@ function buildGrid(gridId, data) {
           data-z="${(s.z||'').replace(/"/g,'&quot;')}"
           data-resp="${resp.replace(/"/g,'&quot;')}"
           data-contrato="${contrato ? 'SI' : 'NO'}"
+          data-mob="${tieneMob ? 'SI' : 'NO'}"
           onclick="openModal('${s.num}')">
           ${contrato ? `<span class="contrato-badge" title="Contrato firmado">✍️</span>` : ''}
           ${tieneMob ? `<span class="mob-badge" title="Tiene mobiliario">🪑</span>` : ''}
+          ${extra.com ? `<span class="com-badge" title="Tiene comentario">📝</span>` : ''}
           <span class="snum">${s.num}</span>
           ${searchLabel ? `<span class="srub">${searchLabel.length>22?searchLabel.slice(0,20)+'…':searchLabel}</span>` : ''}
           ${s.e==='Disponible'&&precio ? `<span class="srub" style="font-weight:700">$${Number(precio).toLocaleString('es-AR')}</span>` : ''}
@@ -1167,7 +1261,9 @@ function switchFloor(f, btn) {
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   applyFilters();
-  setTimeout(()=>{ aplicarZoom(); }, 50);
+  // Esperamos al próximo repintado real (en vez de un setTimeout con tiempo fijo)
+  // para que el piso ya esté visible y con su layout final antes de reaplicar el zoom.
+  requestAnimationFrame(() => requestAnimationFrame(() => { aplicarZoom(); }));
 }
 
 function setFilter(f, btn) {
@@ -1196,7 +1292,7 @@ function applyFilters() {
   const q = document.getElementById('searchInput').value.toLowerCase().trim();
   const gridId = currentFloor==='pb' ? 'grid-pb' : 'grid-pa';
   document.querySelectorAll(`#${gridId} .stand`).forEach(el => {
-    const matchF    = currentFilter==='todos' || el.dataset.e===currentFilter;
+    const matchF    = currentFilter==='todos' || (currentFilter==='mobiliario' ? el.dataset.mob==='SI' : el.dataset.e===currentFilter);
     const matchS    = !q || el.dataset.num.includes(q) || (el.dataset.rb||'').toLowerCase().includes(q) || (el.dataset.n||'').toLowerCase().includes(q);
     const matchMine = !soloMisVentas || (el.dataset.resp||'').toLowerCase() === (CURRENT_USER||'').toLowerCase();
     if (matchF && matchS && matchMine) {
@@ -1206,6 +1302,20 @@ function applyFilters() {
       el.classList.add('dimmed'); el.classList.remove('highlighted');
     }
   });
+}
+
+// ── ACORDEÓN genérico para secciones colapsables del modal ──────────────────
+function setAcc(headerId, bodyId, open) {
+  const header = document.getElementById(headerId);
+  const body   = document.getElementById(bodyId);
+  if (!header || !body) return;
+  header.classList.toggle('open', open);
+  body.classList.toggle('open', open);
+}
+function toggleAcc(headerId, bodyId) {
+  const body = document.getElementById(bodyId);
+  if (!body) return;
+  setAcc(headerId, bodyId, !body.classList.contains('open'));
 }
 
 function openModal(id) {
@@ -1222,6 +1332,7 @@ function openModal(id) {
   if (stickyBadge) { stickyBadge.setAttribute('data-e', estado); stickyBadge.textContent = `${icons[estado]||''} ${estado}`; }
 
   document.getElementById('modalNombre').textContent = extra.n || '';
+  document.getElementById('modalNuevoBadge').style.display = (extra.condicion === 'NUEVO') ? 'inline-block' : 'none';
   document.getElementById('modalRubro').textContent  = data.rb || '(sin rubro)';
   document.getElementById('modalZona').textContent   = extra.contrato === 'SI' ? '✍️ Contrato firmado' : '';
 
@@ -1281,9 +1392,19 @@ function openModal(id) {
     setTimeout(() => pulse.remove(), 1200);
   })();
   document.getElementById('mobPanel').classList.remove('active');
+  document.getElementById('comentariosPanel').classList.remove('active');
   document.getElementById('mainPanel').classList.remove('hidden');
   resetMobQty();
   updateMobSummary();
+
+  // Ícono de comentarios en el header: solo perfil 1 (Vendedor) y 3 (Admin)
+  const comentariosIconBtn = document.getElementById('comentariosIconBtn');
+  if (CURRENT_PERFIL === 1 || CURRENT_PERFIL === 3) {
+    comentariosIconBtn.style.display = 'flex';
+    resetComentariosUI(extra.com || '');
+  } else {
+    comentariosIconBtn.style.display = 'none';
+  }
 
   // Sección asignar feriante: solo para Disponibles Y VENDEDORES o ADMIN
   const assignSection = document.getElementById('assignSection');
@@ -1301,11 +1422,19 @@ function openModal(id) {
     document.getElementById('mobReadonly').style.display = 'none';
   }
 
-  // Sección pagos: solo para Señados
+  // Sección pagos: formulario para Señados (abierto), historial colapsable para Pagados
   const pagosSection = document.getElementById('pagosSection');
-  if (estado === 'Señado') {
+  if (estado === 'Señado' || estado === 'Pagado') {
     pagosSection.style.display = 'block';
-    renderPagos(extra);
+    renderPagos(extra, estado === 'Pagado');
+    if (estado === 'Pagado') {
+      // Pagado: solo historial de lectura, sin formulario para cargar más pagos, colapsado por defecto
+      document.getElementById('pagoForm').style.display = 'none';
+      setAcc('pagosHeader', 'pagosBody', false);
+    } else {
+      // Señado: se necesita ver el formulario para cargar el próximo pago, abierto por defecto
+      setAcc('pagosHeader', 'pagosBody', true);
+    }
   } else {
     pagosSection.style.display = 'none';
   }
@@ -1322,9 +1451,11 @@ function openModal(id) {
 
 // ── ASIGNAR FERIANTE – lógica de búsqueda ──────────────────────────────────
 let selectedFeriante = null;
+let selectedFerianteEsNuevo = false;
 
 function resetAssignUI() {
   selectedFeriante = null;
+  selectedFerianteEsNuevo = false;
   document.getElementById('assignSearch').value = '';
   document.getElementById('assignSearchClear').style.display = 'none';
   document.getElementById('assignDropdown').classList.remove('open');
@@ -1404,8 +1535,9 @@ function filterFeriantes() {
   dd.classList.add('open');
 }
 
-function selectFeriante(nombre) {
+function selectFeriante(nombre, esNuevo) {
   selectedFeriante = nombre;
+  selectedFerianteEsNuevo = !!esNuevo;
   document.getElementById('assignPillName').textContent = nombre;
   document.getElementById('assignPill').classList.add('visible');
   document.getElementById('assignSearchWrap').style.display = 'none';
@@ -1417,6 +1549,7 @@ function selectFeriante(nombre) {
 
 function clearAssignSelection() {
   selectedFeriante = null;
+  selectedFerianteEsNuevo = false;
   document.getElementById('assignPill').classList.remove('visible');
   document.getElementById('assignSearchWrap').style.display = 'block';
   document.getElementById('assignSearch').value = '';
@@ -1470,8 +1603,7 @@ async function asignarFeriante() {
   }
   if (!currentStandId) return;
 
-  btn.disabled = true;
-  showLoading('Guardando...');
+  setBtnBusy(btn, 'Guardando...');
 
   try {
     // Paso 1: asignar feriante (+ mobiliario)
@@ -1479,15 +1611,14 @@ async function asignarFeriante() {
     const responsableAsign = (CURRENT_PERFIL === 3 && vendedor) ? vendedor : CURRENT_USER;
     const mobParams = MOB_ITEMS.map(m => `${m.key}=${mobQty[m.key]||0}`).join('&');
     const adminParam = (CURRENT_PERFIL === 3 && vendedor) ? `&admin=${encodeURIComponent(CURRENT_USER)}` : '';
-    const urlAsignar = `${API_URL}?tipo=asignar&stand=${encodeURIComponent(currentStandId)}&feriante=${encodeURIComponent(feriante)}&user=${encodeURIComponent(responsableAsign)}&${mobParams}${adminParam}`;
+    const nuevoParam = selectedFerianteEsNuevo ? '&nuevo=SI' : '&nuevo=NO';
+    const urlAsignar = `${API_URL}?tipo=asignar&stand=${encodeURIComponent(currentStandId)}&feriante=${encodeURIComponent(feriante)}&user=${encodeURIComponent(responsableAsign)}&${mobParams}${adminParam}${nuevoParam}`;
     const resAsignar = await fetch(urlAsignar);
     const dataAsignar = await resAsignar.json();
     if (!dataAsignar.ok) {
       msgEl.textContent = dataAsignar.error || 'Error al asignar el feriante.';
       msgEl.className = 'assign-msg err';
-      btn.disabled = false;
-      btn.textContent = 'Asignar y señar';
-      hideLoading();
+      clearBtnBusy(btn, 'Asignar y señar');
       return;
     }
 
@@ -1499,16 +1630,17 @@ async function asignarFeriante() {
     if (!dataPago.ok) {
       msgEl.textContent = `Feriante asignado pero error al registrar la seña: ${dataPago.error || ''}`;
       msgEl.className = 'assign-msg err';
-      btn.disabled = false;
-      btn.textContent = 'Asignar y señar';
-      hideLoading();
+      clearBtnBusy(btn, 'Asignar y señar');
       return;
     }
 
-    // Todo OK: recargar mapa y cerrar
+    // Todo OK: recargar mapa y cerrar. Acá sí vale la pena el overlay completo,
+    // porque se está recargando el mapa entero y cerrando el modal.
     msgEl.textContent = `✅ ${feriante} asignado y seña de $${monto.toLocaleString('es-AR')} registrada. Actualizando mapa...`;
     msgEl.className = 'assign-msg ok';
+    setBtnBusy(btn, 'Actualizando mapa...');
     modalLocked = true;
+    showLoading('Actualizando mapa...');
     await load();
     document.getElementById('modalOverlay').classList.remove('open');
     unlockModal();
@@ -1516,22 +1648,33 @@ async function asignarFeriante() {
   } catch(err) {
     msgEl.textContent = 'Error de conexión.';
     msgEl.className = 'assign-msg err';
-    hideLoading();
+    clearBtnBusy(btn, 'Asignar y señar');
   }
 
-  btn.disabled = false;
-  btn.textContent = 'Asignar y señar';
+  clearBtnBusy(btn, 'Asignar y señar');
 }
 
 let modalLocked = false;
 
 // ── LOADING OVERLAY ──────────────────────────────────────────────────────────
 let _loadingInterval = null;
+let _loadingShownAt = 0;
+const LOADING_MIN_MS = 380; // tiempo mínimo visible: evita que "titile" si la respuesta es instantánea
+
 function showLoading(text = 'Guardando...') {
   document.getElementById('loadingText').textContent = text;
   const bar = document.getElementById('loadingBar');
+  const overlay = document.getElementById('loadingOverlay');
+  bar.style.transition = 'none';
   bar.style.width = '0%';
-  document.getElementById('loadingOverlay').classList.add('visible');
+  overlay.classList.add('visible');
+  _loadingShownAt = Date.now();
+  // Un frame después activamos el fade-in (si lo hacemos en el mismo frame que
+  // .visible, el navegador puede saltarse la transición de opacity)
+  requestAnimationFrame(() => {
+    bar.style.transition = '';
+    overlay.classList.add('shown');
+  });
   // Progreso animado (no determinista): llega al 85% y se detiene
   let pct = 0;
   clearInterval(_loadingInterval);
@@ -1544,16 +1687,40 @@ function showLoading(text = 'Guardando...') {
 function hideLoading() {
   clearInterval(_loadingInterval);
   const bar = document.getElementById('loadingBar');
-  bar.style.width = '100%';
+  const overlay = document.getElementById('loadingOverlay');
+  const elapsed = Date.now() - _loadingShownAt;
+  const wait = Math.max(0, LOADING_MIN_MS - elapsed);
   setTimeout(() => {
-    document.getElementById('loadingOverlay').classList.remove('visible');
-    bar.style.width = '0%';
-  }, 320);
+    bar.style.width = '100%';
+    setTimeout(() => {
+      overlay.classList.remove('shown'); // dispara el fade-out (opacity, .18s)
+      setTimeout(() => {
+        overlay.classList.remove('visible');
+        bar.style.width = '0%';
+      }, 200);
+    }, 220);
+  }, wait);
 }
 
-function lockModal() {
+// Estado "ocupado" inline en un botón (spinner + texto), para acciones rápidas
+// que no ameritan tapar toda la pantalla con el overlay.
+function setBtnBusy(btn, text) {
+  if (!btn) return;
+  if (btn.dataset.origHtml === undefined) btn.dataset.origHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="btn-spinner"></span>${text}`;
+}
+function clearBtnBusy(btn, text) {
+  if (!btn) return;
+  btn.disabled = false;
+  if (text !== undefined) btn.textContent = text;
+  else if (btn.dataset.origHtml !== undefined) btn.innerHTML = btn.dataset.origHtml;
+  delete btn.dataset.origHtml;
+}
+
+function lockModal(text = 'Actualizando mapa...') {
   modalLocked = true;
-  showLoading('Guardando...');
+  showLoading(text);
 }
 
 function unlockModal() {
@@ -1574,24 +1741,44 @@ function closeModal(e) {
 }
 
 const ZOOM_STEPS = [0.4, 0.5, 0.6, 0.75, 0.9, 1.1, 1.3];
+const ZOOM_MIN = ZOOM_STEPS[0];
+const ZOOM_MAX = ZOOM_STEPS[ZOOM_STEPS.length - 1];
 let zoomIdx = 2;
+let liveScale = null; // escala continua durante el pinch (más fluida que los steps fijos)
+
+function getScale() { return liveScale !== null ? liveScale : ZOOM_STEPS[zoomIdx]; }
+
 function aplicarZoom() {
-  const scale = ZOOM_STEPS[zoomIdx];
+  const scale = getScale();
   document.querySelectorAll('.map-inner').forEach(inner => { inner.style.transform=`scale(${scale})`; });
   document.getElementById('zoomLabel').textContent = Math.round(scale*100)+'%';
   fixMapSize(); centerMap();
 }
-function cambiarZoom(dir) { zoomIdx=Math.max(0,Math.min(ZOOM_STEPS.length-1,zoomIdx+dir)); aplicarZoom(); }
+// Versión liviana para usar DURANTE el pinch: solo toca transform (GPU, sin reflow).
+// fixMapSize()/centerMap() recalculan width/height/margin — eso es "layout", caro si se hace
+// en cada touchmove. Por eso se difieren hasta que el gesto termina (ver touchend del pinch).
+function aplicarZoomLive() {
+  const scale = getScale();
+  document.querySelectorAll('.map-inner').forEach(inner => { inner.style.transform=`scale(${scale})`; });
+  document.getElementById('zoomLabel').textContent = Math.round(scale*100)+'%';
+}
+function cambiarZoom(dir) { liveScale = null; zoomIdx=Math.max(0,Math.min(ZOOM_STEPS.length-1,zoomIdx+dir)); aplicarZoom(); }
 
 // ── PINCH-TO-ZOOM (mobile) + CTRL+SCROLL (desktop) ───────────────────────────
 (function() {
   let pinchStartDist = null;
   let pinchStartIdx  = null;
+  let pinchContainer = null;
+  let anchorLocalX = 0, anchorLocalY = 0;
 
   function getPinchDist(touches) {
     const dx = touches[0].clientX - touches[1].clientX;
     const dy = touches[0].clientY - touches[1].clientY;
     return Math.sqrt(dx*dx + dy*dy);
+  }
+
+  function getMid(touches) {
+    return { x: (touches[0].clientX + touches[1].clientX) / 2, y: (touches[0].clientY + touches[1].clientY) / 2 };
   }
 
   // Detectar si el toque ocurre dentro del modal (para no interferir)
@@ -1606,6 +1793,23 @@ function cambiarZoom(dir) { zoomIdx=Math.max(0,Math.min(ZOOM_STEPS.length-1,zoom
       e.preventDefault();
       pinchStartDist = getPinchDist(e.touches);
       pinchStartIdx  = zoomIdx;
+      liveScale = ZOOM_STEPS[zoomIdx]; // arranca en la escala actual, luego se mueve continuo
+
+      // Sin transición durante el pinch: si no, la animación "compite" con los dedos y se siente robótico
+      document.querySelectorAll('.map-inner').forEach(inner => { inner.style.transition = 'none'; });
+
+      // Guardamos el punto donde se "pellizcó" (en coordenadas sin escala del mapa)
+      const mid = getMid(e.touches);
+      const el  = document.elementFromPoint(mid.x, mid.y);
+      pinchContainer = el && el.closest('.map-scroll');
+      const inner = pinchContainer && pinchContainer.querySelector('.map-inner');
+      if (inner) {
+        const rect = inner.getBoundingClientRect();
+        anchorLocalX = (mid.x - rect.left) / liveScale;
+        anchorLocalY = (mid.y - rect.top) / liveScale;
+      } else {
+        pinchContainer = null;
+      }
     }
   }, { passive: false });
 
@@ -1615,18 +1819,21 @@ function cambiarZoom(dir) { zoomIdx=Math.max(0,Math.min(ZOOM_STEPS.length-1,zoom
       e.preventDefault();
       const dist  = getPinchDist(e.touches);
       const ratio = dist / pinchStartDist;
-      // Calcular cuántos steps mover según el ratio
-      const targetScale = ZOOM_STEPS[pinchStartIdx] * ratio;
-      // Encontrar el step más cercano al targetScale
-      let bestIdx = 0;
-      let bestDiff = Infinity;
-      ZOOM_STEPS.forEach((s, i) => {
-        const diff = Math.abs(s - targetScale);
-        if (diff < bestDiff) { bestDiff = diff; bestIdx = i; }
-      });
-      if (bestIdx !== zoomIdx) {
-        zoomIdx = bestIdx;
-        aplicarZoom();
+      // Escala continua (sin encajar en steps) para que el pinch se sienta natural
+      liveScale = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, ZOOM_STEPS[pinchStartIdx] * ratio));
+      aplicarZoomLive();
+
+      // Reacomodar el scroll para que el punto pellizcado quede fijo bajo los dedos
+      if (pinchContainer) {
+        const inner = pinchContainer.querySelector('.map-inner');
+        if (inner) {
+          const mid  = getMid(e.touches);
+          const rect = inner.getBoundingClientRect();
+          const currentScreenX = rect.left + anchorLocalX * liveScale;
+          const currentScreenY = rect.top  + anchorLocalY * liveScale;
+          pinchContainer.scrollLeft += (currentScreenX - mid.x);
+          pinchContainer.scrollTop  += (currentScreenY - mid.y);
+        }
       }
     }
   }, { passive: false });
@@ -1635,6 +1842,21 @@ function cambiarZoom(dir) { zoomIdx=Math.max(0,Math.min(ZOOM_STEPS.length-1,zoom
     if (e.touches.length < 2) {
       pinchStartDist = null;
       pinchStartIdx  = null;
+      pinchContainer = null;
+
+      if (liveScale !== null) {
+        // Al soltar los dedos, encajamos en el step más cercano (para que quede consistente con los botones +/−)
+        let bestIdx = 0, bestDiff = Infinity;
+        ZOOM_STEPS.forEach((s, i) => {
+          const diff = Math.abs(s - liveScale);
+          if (diff < bestDiff) { bestDiff = diff; bestIdx = i; }
+        });
+        zoomIdx = bestIdx;
+        liveScale = null;
+        // Restauramos la transición suave para el "snap" final y para los botones +/−
+        document.querySelectorAll('.map-inner').forEach(inner => { inner.style.transition = ''; });
+        aplicarZoom();
+      }
     }
   });
 
@@ -1646,7 +1868,7 @@ function cambiarZoom(dir) { zoomIdx=Math.max(0,Math.min(ZOOM_STEPS.length-1,zoom
   }, { passive: false });
 })();
 function fixMapSize() {
-  const scale = ZOOM_STEPS[zoomIdx];
+  const scale = getScale();
   document.querySelectorAll('.map-inner').forEach(inner => {
     const bg=inner.querySelector('.map-bg');
     const w=Math.max(inner.scrollWidth, bg?parseInt(bg.getAttribute('width')):0);
@@ -1655,7 +1877,7 @@ function fixMapSize() {
   });
 }
 function centerMap() {
-  const scale = ZOOM_STEPS[zoomIdx];
+  const scale = getScale();
   document.querySelectorAll('.map-scroll').forEach(container => {
     const inner=container.querySelector('.map-inner'); if(!inner) return;
     const cw=inner.scrollWidth*scale;
@@ -1695,7 +1917,7 @@ async function registrarBiometrico(user, perfil) {
     const userId    = new TextEncoder().encode(user);
     const cred = await navigator.credentials.create({ publicKey: {
       challenge,
-      rp: { name: 'Feria Julio 2026' },
+      rp: { name: 'Feria Septiembre 2026' },
       user: { id: userId, name: user, displayName: user },
       pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
       authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
@@ -1745,6 +1967,9 @@ async function loginConBiometrico() {
         if (data.ok && data.usuarios.length) {
           sel.innerHTML = '<option value="">— Elegí tu usuario —</option>' +
             data.usuarios.map(u => `<option value="${u.nombre}">${u.nombre}</option>`).join('');
+          VENDEDORES_LIST = data.usuarios
+            .filter(u => u.perfil === 1)
+            .map(u => u.nombre);
         }
       } catch(err) {
         sel.innerHTML = '<option value="">Error de conexión</option>';
@@ -1786,6 +2011,11 @@ async function initLogin() {
       // Poblar combo de login solo con los nombres
       sel.innerHTML = '<option value="">— Elegí tu usuario —</option>' +
         data.usuarios.map(u => `<option value="${u.nombre}">${u.nombre}</option>`).join('');
+      // Reutilizar estos mismos datos para VENDEDORES_LIST, así load()
+      // no vuelve a pedir "tipo=usuarios" un segundo después
+      VENDEDORES_LIST = data.usuarios
+        .filter(u => u.perfil === 1)
+        .map(u => u.nombre);
     } else {
       sel.innerHTML = '<option value="">Error al cargar usuarios</option>';
     }
@@ -1793,8 +2023,8 @@ async function initLogin() {
     document.getElementById('loginUser').innerHTML = '<option value="">Error de conexión</option>';
   }
   mostrarBtnBio();
-  // Nota: VENDEDORES_LIST se puebla en load() para que siempre esté disponible,
-  // incluso cuando se restaura la sesión desde sessionStorage.
+  // Nota: si la sesión se restaura desde sessionStorage (arriba), este bloque
+  // nunca corre y VENDEDORES_LIST sigue vacío — en ese caso load() sí lo pide.
 }
 
 async function doLogin() {
@@ -1888,14 +2118,17 @@ function formatFecha(val) {
   return `${dd}/${mm}/${aaaa} ${hh}:${min}`;
 }
 
-function renderPagos(extra) {
+function renderPagos(extra, soloHechos) {
   const pagos = [
     { num:1, monto:extra.p1m, fecha:extra.p1f, resp:extra.p1r, medio:extra.p1med },
     { num:2, monto:extra.p2m, fecha:extra.p2f, resp:extra.p2r, medio:extra.p2med },
     { num:3, monto:extra.p3m, fecha:extra.p3f, resp:extra.p3r, medio:extra.p3med },
   ];
   const listEl = document.getElementById('pagosList');
-  listEl.innerHTML = pagos.map(p => {
+  const paraMostrar = soloHechos
+    ? pagos.filter(p => p.monto !== undefined && p.monto !== null && p.monto !== '' && Number(p.monto) > 0)
+    : pagos;
+  listEl.innerHTML = paraMostrar.map(p => {
     const cargado = p.monto !== undefined && p.monto !== null && p.monto !== '' && Number(p.monto) > 0;
     const fechaFmt = formatFecha(p.fecha);
     return `<div class="pago-item ${cargado ? 'cargado' : ''}">
@@ -1962,8 +2195,7 @@ async function cargarPago() {
   }
 
   if (!currentStandId)      return;
-  btn.disabled    = true;
-  showLoading('Guardando...');
+  setBtnBusy(btn, 'Guardando...');
   try {
     const vendedorParam = vendedor ? `&vendedor=${encodeURIComponent(vendedor)}` : '';
     const url  = `${API_URL}?tipo=pago&stand=${encodeURIComponent(currentStandId)}&num=${pagoNumActual}&monto=${monto}&medio=${encodeURIComponent(medio)}&user=${encodeURIComponent(CURRENT_USER)}${vendedorParam}`;
@@ -1985,29 +2217,34 @@ async function cargarPago() {
       document.getElementById('modalDebeBox').className = 'money-box ' + (ex.d > 0 ? 'debe-mal' : 'debe-ok');
 
       if (ex.d === 0) {
-        // Deuda saldada: bloquear modal, recargar mapa y recién cerrar
+        // Deuda saldada: bloquear modal, recargar mapa y recién cerrar.
+        // Acá sí conviene el overlay completo (se recarga el mapa entero).
         msgEl.textContent = `✅ Pago ${pagoNumActual} registrado. Stand Pagado. Actualizando mapa...`;
         msgEl.className   = 'pago-msg ok';
-        lockModal();
+        setBtnBusy(btn, 'Actualizando mapa...');
+        lockModal('Actualizando mapa...');
         await load();
         document.getElementById('modalOverlay').classList.remove('open');
         unlockModal();
       } else {
         // Aún debe: actualizar la UI del modal normalmente
-        hideLoading();
+        clearBtnBusy(btn, 'Registrar pago');
         msgEl.textContent = `✅ Pago ${pagoNumActual} registrado correctamente.`;
         msgEl.className   = 'pago-msg ok';
         setTimeout(() => { renderPagos(ex); }, 1200);
+        return;
       }
     } else {
-      hideLoading();
+      clearBtnBusy(btn, 'Registrar pago');
       msgEl.textContent = data.error || 'Error al guardar el pago.';
       msgEl.className   = 'pago-msg err';
+      return;
     }
   } catch(err) {
-    hideLoading();
+    clearBtnBusy(btn, 'Registrar pago');
     msgEl.textContent = 'Error de conexión.';
     msgEl.className   = 'pago-msg err';
+    return;
   }
   btn.disabled    = false;
   btn.textContent = 'Registrar pago';
@@ -2101,7 +2338,7 @@ async function guardarNuevoFeriante() {
       // Volver al panel principal y preseleccionar al nuevo feriante
       setTimeout(() => {
         closeAltaPanel();
-        selectFeriante(nombre);
+        selectFeriante(nombre, true);
       }, 1200);
     } else {
       msgEl.textContent = data.error || 'Error al dar de alta el feriante.';
@@ -2259,6 +2496,8 @@ function resetMobAdicionalUI() {
   document.getElementById('mobAdicionalMsg').textContent = '';
   document.getElementById('mobAdicionalMsg').className = 'mob-adicional-msg';
   document.getElementById('mobAdicionalBtn').disabled = true;
+  // Arranca siempre colapsado
+  setAcc('mobAdicionalHeader', 'mobAdicionalBody', false);
   cargarMediosPago().then(() => {
     const sel = document.getElementById('mobAdicionalMedio');
     if (MEDIOS_PAGO.length) {
@@ -2359,8 +2598,7 @@ async function venderMobAdicional() {
   if (!medio)             { msgEl.textContent = 'Seleccioná un medio de pago.'; msgEl.className = 'mob-adicional-msg err'; return; }
   if (!currentStandId)    return;
 
-  btn.disabled = true;
-  showLoading('Guardando...');
+  setBtnBusy(btn, 'Guardando...');
 
   // Armar descripción del mob para la leyenda
   const mobDesc = items.map(m => `${mobAdicionalQty[m.key]}×${m.label}`).join(' + ');
@@ -2373,23 +2611,86 @@ async function venderMobAdicional() {
     if (data.ok) {
       msgEl.textContent = `✅ Mobiliario adicional registrado. Actualizando...`;
       msgEl.className = 'mob-adicional-msg ok';
-      modalLocked = true;
+      // Acá sí conviene el overlay completo: se recarga el mapa entero y se cierra el modal.
+      setBtnBusy(btn, 'Actualizando mapa...');
+      lockModal('Actualizando mapa...');
       await load();
       document.getElementById('modalOverlay').classList.remove('open');
       unlockModal();
     } else {
-      hideLoading();
+      clearBtnBusy(btn, 'Registrar venta de mobiliario');
       msgEl.textContent = data.error || 'Error al registrar el mobiliario adicional.';
       msgEl.className = 'mob-adicional-msg err';
-      btn.disabled = false;
-      btn.textContent = 'Registrar venta de mobiliario';
     }
   } catch(err) {
-    hideLoading();
+    clearBtnBusy(btn, 'Registrar venta de mobiliario');
     msgEl.textContent = 'Error de conexión.';
     msgEl.className = 'mob-adicional-msg err';
-    btn.disabled = false;
-    btn.textContent = 'Registrar venta de mobiliario';
+  }
+}
+
+// ── COMENTARIOS (ícono en header + panel aparte, perfil 1 y 3) ──────────────
+let comentarioOriginal = '';
+
+function resetComentariosUI(texto) {
+  comentarioOriginal = texto || '';
+  document.getElementById('comentariosTexto').value = comentarioOriginal;
+  document.getElementById('comentariosMsg').textContent = '';
+  document.getElementById('comentariosMsg').className = 'comentarios-msg';
+  document.getElementById('comentariosIconDot').style.display = comentarioOriginal ? 'block' : 'none';
+  checkComentariosBtn();
+}
+
+function openComentariosPanel() {
+  document.getElementById('mainPanel').classList.add('hidden');
+  document.getElementById('mobPanel').classList.remove('active');
+  document.getElementById('altaPanel').classList.remove('active');
+  document.getElementById('comentariosPanel').classList.add('active');
+}
+
+function closeComentariosPanel() {
+  document.getElementById('comentariosPanel').classList.remove('active');
+  document.getElementById('mainPanel').classList.remove('hidden');
+}
+
+function checkComentariosBtn() {
+  const texto = document.getElementById('comentariosTexto').value;
+  document.getElementById('comentariosBtn').disabled = (texto.trim() === comentarioOriginal.trim());
+}
+
+async function guardarComentario() {
+  const btn   = document.getElementById('comentariosBtn');
+  const msgEl = document.getElementById('comentariosMsg');
+  const texto = document.getElementById('comentariosTexto').value.trim();
+  if (!currentStandId) return;
+
+  msgEl.textContent = '';
+  msgEl.className = 'comentarios-msg';
+  setBtnBusy(btn, 'Guardando...');
+
+  try {
+    const url  = `${API_URL}?tipo=comentario&stand=${encodeURIComponent(currentStandId)}&user=${encodeURIComponent(CURRENT_USER)}&texto=${encodeURIComponent(texto)}`;
+    const res  = await fetch(url);
+    const data = await res.json();
+    if (data.ok) {
+      comentarioOriginal = texto;
+      if (!FULL_DATA.extraData) FULL_DATA.extraData = {};
+      if (!FULL_DATA.extraData[currentStandId]) FULL_DATA.extraData[currentStandId] = {};
+      FULL_DATA.extraData[currentStandId].com = texto;
+      document.getElementById('comentariosIconDot').style.display = texto ? 'block' : 'none';
+      clearBtnBusy(btn, 'Guardar comentario');
+      btn.disabled = true; // el texto ya coincide con lo guardado, no hay nada nuevo que guardar
+      msgEl.textContent = '✅ Comentario guardado.';
+      msgEl.className = 'comentarios-msg ok';
+    } else {
+      clearBtnBusy(btn, 'Guardar comentario');
+      msgEl.textContent = data.error || 'Error al guardar el comentario.';
+      msgEl.className = 'comentarios-msg err';
+    }
+  } catch(err) {
+    clearBtnBusy(btn, 'Guardar comentario');
+    msgEl.textContent = 'Error de conexión.';
+    msgEl.className = 'comentarios-msg err';
   }
 }
 
