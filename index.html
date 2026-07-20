@@ -251,11 +251,10 @@
   .modal {
     background: var(--surface); border-radius: 22px 22px 0 0;
     padding: 18px 20px 40px; width: 100%; max-width: 480px;
-    animation: slideUp .62s cubic-bezier(.32,1,.64,1);
     position: relative; max-height: 90vh; overflow-y: auto;
     box-shadow: 0 -4px 32px rgba(0,0,0,.14);
   }
-  .modal.closing { animation: slideDown .38s cubic-bezier(.4,0,.6,1) forwards; }
+  .modal.closing { transition: none; animation: slideDown .38s cubic-bezier(.4,0,.6,1) forwards; }
   @keyframes slideUp   { from{transform:translateY(100%)} to{transform:translateY(0)} }
   @keyframes slideDown { from{transform:translateY(0)}    to{transform:translateY(105%)} }
   .modal-handle { width: 36px; height: 4px; background: #d1d1d6; border-radius: 2px; margin: 0 auto 14px; }
@@ -1078,7 +1077,7 @@ let lastTap = 0;
 document.addEventListener('touchend', e => { const now=Date.now(); if(now-lastTap<300) e.preventDefault(); lastTap=now; }, {passive:false});
 
 // ── VERSIÓN DE LA APP ────────────────────────────────────────────────────────
-const APP_VERSION = 'v1.0';   // ← cambiá solo acá
+const APP_VERSION = 'v1.1';   // ← cambiá solo acá
 document.addEventListener('DOMContentLoaded', () => {
   const lv = document.getElementById('loginVersion');
   const hv = document.getElementById('headerVersion');
@@ -1185,7 +1184,7 @@ function buildGrid(gridId, data) {
           data-resp="${resp.replace(/"/g,'&quot;')}"
           data-contrato="${contrato ? 'SI' : 'NO'}"
           data-mob="${tieneMob ? 'SI' : 'NO'}"
-          onclick="openModal('${s.num}')">
+          onclick="openModal('${s.num}', event)">
           ${contrato ? `<span class="contrato-badge" title="Contrato firmado">✍️</span>` : ''}
           ${tieneMob ? `<span class="mob-badge" title="Tiene mobiliario">🪑</span>` : ''}
           ${extra.com ? `<span class="com-badge" title="Tiene comentario">📝</span>` : ''}
@@ -1318,7 +1317,7 @@ function toggleAcc(headerId, bodyId) {
   setAcc(headerId, bodyId, !body.classList.contains('open'));
 }
 
-function openModal(id) {
+function openModal(id, evt) {
   currentStandId = id;
   const data  = (FULL_DATA.pbData||{})[id] || (FULL_DATA.paData||{})[id] || {};
   const extra = (FULL_DATA.extraData||{})[id] || {};
@@ -1371,8 +1370,43 @@ function openModal(id) {
     moneyEl.style.display = 'none';
   }
 
-  document.getElementById('modalOverlay').classList.add('open');
-  document.querySelector('.modal').scrollTop = 0;
+  const overlayEl = document.getElementById('modalOverlay');
+  const modalEl   = document.querySelector('.modal');
+  overlayEl.classList.add('open');
+
+  const clickEl = evt && evt.currentTarget;
+  if (clickEl) {
+    const sr = clickEl.getBoundingClientRect();
+    const mr = modalEl.getBoundingClientRect();
+    let ox = ((sr.left + sr.width / 2 - mr.left) / mr.width) * 100;
+    let oy = ((sr.top + sr.height / 2 - mr.top) / mr.height) * 100;
+    ox = Math.max(0, Math.min(100, ox));
+    oy = Math.max(0, Math.min(100, oy));
+    modalEl.style.transformOrigin = ox + '% ' + oy + '%';
+    modalEl.style.transition = 'none';
+    modalEl.style.transform  = 'scale(.05)';
+    modalEl.style.opacity    = '0';
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        modalEl.style.transition = 'transform .45s cubic-bezier(.32,1,.64,1), opacity .3s ease';
+        modalEl.style.transform  = 'scale(1)';
+        modalEl.style.opacity    = '1';
+      });
+    });
+  } else {
+    modalEl.style.transformOrigin = '';
+    modalEl.style.transition = 'none';
+    modalEl.style.transform  = 'translateY(100%)';
+    modalEl.style.opacity    = '1';
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        modalEl.style.transition = 'transform .45s cubic-bezier(.32,1,.64,1)';
+        modalEl.style.transform  = 'translateY(0)';
+      });
+    });
+  }
+
+  modalEl.scrollTop = 0;
 
   // ── Centrar mapa en el stand seleccionado ──
   (function centerOnStand() {
