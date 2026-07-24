@@ -373,6 +373,25 @@
   .assign-selected-pill.visible { display: flex; }
   .assign-selected-pill span { font-size: 13px; font-weight: 600; color: #5b21b6; flex: 1; }
   .assign-selected-pill button { background: none; border: none; font-size: 18px; color: #7c3aed; cursor: pointer; padding: 0; line-height: 1; }
+  .assign-selected-pill.blacklisted { background: #fef2f2; border-color: #fecaca; }
+  .assign-selected-pill.blacklisted span { color: #b91c1c; }
+  .assign-selected-pill.blacklisted button { color: #dc2626; }
+
+  .assign-blacklist-warning {
+    display: none; align-items: flex-start; gap: 6px;
+    background: #fef2f2; border: 1.5px solid #fecaca; border-radius: var(--radius-sm);
+    padding: 9px 12px; margin-bottom: 10px;
+    font-size: 12px; font-weight: 600; color: #b91c1c; line-height: 1.4;
+  }
+  .assign-blacklist-warning.visible { display: flex; }
+
+  .assign-dropdown-item.blacklisted { background: #fef2f2; }
+  .assign-dropdown-item.blacklisted:active, .assign-dropdown-item.blacklisted.focused { background: #fee2e2; }
+  .assign-dropdown-item .bl-tag {
+    display: inline-flex; align-items: center; gap: 3px;
+    font-size: 10px; font-weight: 700; color: #b91c1c;
+    background: #fee2e2; border-radius: 6px; padding: 1px 6px; margin-left: 6px;
+  }
   .assign-btn { width: 100%; padding: 10px; background: #7c3aed; color: white; border: none; border-radius: var(--radius-sm); font-size: 14px; font-weight: 600; font-family: var(--font); cursor: pointer; transition: background .18s; }
   .assign-btn:active { background: #6d28d9; }
   .assign-btn:disabled { background: #c4b5fd; color: #4c1d95; cursor: not-allowed; }
@@ -843,6 +862,10 @@
         <span id="assignPillName"></span>
         <button onclick="clearAssignSelection()" title="Quitar selección">×</button>
       </div>
+      <!-- Warning: feriante en Lista Negra -->
+      <div class="assign-blacklist-warning" id="assignBlacklistWarning">
+        ⚠️ Este feriante figura en la <strong>Lista Negra</strong>. Verificá antes de continuar con la venta.
+      </div>
       <!-- Campo de búsqueda -->
       <div class="assign-search-wrap" id="assignSearchWrap">
         <input type="text" class="assign-search-input" id="assignSearch"
@@ -1077,7 +1100,7 @@ let lastTap = 0;
 document.addEventListener('touchend', e => { const now=Date.now(); if(now-lastTap<300) e.preventDefault(); lastTap=now; }, {passive:false});
 
 // ── VERSIÓN DE LA APP ────────────────────────────────────────────────────────
-const APP_VERSION = 'v1.1';   // ← cambiá solo acá
+const APP_VERSION = 'v1.2';   // ← cambiá solo acá
 document.addEventListener('DOMContentLoaded', () => {
   const lv = document.getElementById('loginVersion');
   const hv = document.getElementById('headerVersion');
@@ -1089,10 +1112,22 @@ const API_URL = "https://script.google.com/macros/s/AKfycbw1KPZO2gNyjKoj8GDdoG6Q
 
 let FULL_DATA = {}, currentFloor = 'pb', currentFilter = 'todos';
 let FERIANTES_LIST = [];
+let LISTA_NEGRA = [];      // nombres normalizados (sin tildes, minúsculas, sin espacios extra)
 let VENDEDORES_LIST = [];  // solo usuarios con perfil 1, para el Admin
 let currentStandId = null;
 let soloMisVentas  = false;
 let PRECIOS_MOB    = {};   // { 'Mesa': 1500, 'Pupitre Doble': 2000, ... }
+
+// Normaliza nombres para comparar sin importar mayúsculas, tildes o espacios extra
+function normalizarNombre(s) {
+  return String(s || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // saca tildes
+    .toLowerCase()
+    .trim().replace(/\s+/g, ' ');
+}
+function estaEnListaNegra(nombre) {
+  return LISTA_NEGRA.includes(normalizarNombre(nombre));
+}
 
 async function load() {
   if (!modalLocked) showLoading('Cargando mapa...');
@@ -1100,23 +1135,30 @@ async function load() {
     // Estas 4 listas casi no cambian durante la feria: si ya las tenemos en
     // memoria, no las volvemos a pedir. El mapa (estado de los stands) sí se
     // pide siempre, para mantener la sincronización entre usuarios.
-    const needFeriantes = FERIANTES_LIST.length === 0;
-    const needPrecios   = Object.keys(PRECIOS_MOB).length === 0;
-    const needUsuarios  = VENDEDORES_LIST.length === 0;
-    const needMedios    = MEDIOS_PAGO.length === 0;
+    const needFeriantes  = FERIANTES_LIST.length === 0;
+    const needPrecios    = Object.keys(PRECIOS_MOB).length === 0;
+    const needUsuarios   = VENDEDORES_LIST.length === 0;
+    const needMedios     = MEDIOS_PAGO.length === 0;
 
-    const [resMap, resFeriantes, resPrecios, resUsuarios, resMedios] = await Promise.all([
+    const [resMap, resFeriantes, resListaNegra, resPrecios, resUsuarios, resMedios] = await Promise.all([
       fetch(API_URL),
-      needFeriantes ? fetch(API_URL + '?tipo=feriantes') : Promise.resolve(null),
-      needPrecios   ? fetch(API_URL + '?tipo=precios')   : Promise.resolve(null),
-      needUsuarios  ? fetch(API_URL + '?tipo=usuarios')  : Promise.resolve(null),
-      needMedios    ? fetch(API_URL + '?tipo=medios')    : Promise.resolve(null)
+      needFeriantes  ? fetch(API_URL + '?tipo=feriantes')  : Promise.resolve(null),
+      fetch(API_URL + '?tipo=listanegra'), // se recarga siempre, es poca info y puede cambiar
+      needPrecios    ? fetch(API_URL + '?tipo=precios')    : Promise.resolve(null),
+      needUsuarios   ? fetch(API_URL + '?tipo=usuarios')   : Promise.resolve(null),
+      needMedios     ? fetch(API_URL + '?tipo=medios')     : Promise.resolve(null)
     ]);
     FULL_DATA = await resMap.json();
     if (resFeriantes) {
       const ferData = await resFeriantes.json();
       if (ferData.ok && ferData.feriantes) {
         FERIANTES_LIST = ferData.feriantes;
+      }
+    }
+    if (resListaNegra) {
+      const lnData = await resListaNegra.json();
+      if (lnData.ok && lnData.listaNegra) {
+        LISTA_NEGRA = lnData.listaNegra.map(normalizarNombre);
       }
     }
     if (resPrecios) {
@@ -1497,8 +1539,9 @@ function resetAssignUI() {
   document.getElementById('assignSearch').value = '';
   document.getElementById('assignSearchClear').style.display = 'none';
   document.getElementById('assignDropdown').classList.remove('open');
-  document.getElementById('assignPill').classList.remove('visible');
+  document.getElementById('assignPill').classList.remove('visible', 'blacklisted');
   document.getElementById('assignPillName').textContent = '';
+  document.getElementById('assignBlacklistWarning').classList.remove('visible');
   document.getElementById('assignMsg').textContent = '';
   document.getElementById('assignMsg').className = 'assign-msg';
   document.getElementById('assignBtn').disabled = true;
@@ -1565,8 +1608,10 @@ function filterFeriantes() {
         ? f.replace(new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'gi'),
             '<mark>$1</mark>')
         : f;
-      return `<div class="assign-dropdown-item" ontouchstart="" onclick="selectFeriante('${f.replace(/'/g,"\\'")}')">
-        ${label}
+      const enListaNegra = estaEnListaNegra(f);
+      const tag = enListaNegra ? '<span class="bl-tag">⚠️ Lista negra</span>' : '';
+      return `<div class="assign-dropdown-item${enListaNegra ? ' blacklisted' : ''}" ontouchstart="" onclick="selectFeriante('${f.replace(/'/g,"\\'")}')">
+        ${label}${tag}
       </div>`;
     }).join('');
   }
@@ -1582,13 +1627,20 @@ function selectFeriante(nombre, esNuevo) {
   document.getElementById('assignDropdown').classList.remove('open');
   document.getElementById('assignMsg').textContent = '';
   document.getElementById('assignMsg').className = 'assign-msg';
+
+  // Warning: feriante en Lista Negra (solo avisa, no bloquea la venta)
+  const enListaNegra = estaEnListaNegra(nombre);
+  document.getElementById('assignPill').classList.toggle('blacklisted', enListaNegra);
+  document.getElementById('assignBlacklistWarning').classList.toggle('visible', enListaNegra);
+
   checkAssignBtn();
 }
 
 function clearAssignSelection() {
   selectedFeriante = null;
   selectedFerianteEsNuevo = false;
-  document.getElementById('assignPill').classList.remove('visible');
+  document.getElementById('assignPill').classList.remove('visible', 'blacklisted');
+  document.getElementById('assignBlacklistWarning').classList.remove('visible');
   document.getElementById('assignSearchWrap').style.display = 'block';
   document.getElementById('assignSearch').value = '';
   document.getElementById('assignSearchClear').style.display = 'none';
