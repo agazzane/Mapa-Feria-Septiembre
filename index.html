@@ -1313,9 +1313,8 @@ async function load() {
     buildGrid('grid-pa', FULL_DATA.paData);
     buildStats();
     const total = Object.keys(FULL_DATA.pbData).length + Object.keys(FULL_DATA.paData).length;
-    document.getElementById('subtitle').textContent = `${total} stands · Planta Baja y Planta Alta`;
     const horaActualizacion = new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
-    document.getElementById('lastUpdated').textContent = `Actualizado ${horaActualizacion}`;
+    document.getElementById('subtitle').textContent = `${total} stands · Act. ${horaActualizacion}`;
     aplicarZoom();
     buildMinimap();
     if (!modalLocked) hideLoading();
@@ -3126,6 +3125,20 @@ async function guardarComentario() {
       if (!FULL_DATA.extraData[currentStandId]) FULL_DATA.extraData[currentStandId] = {};
       FULL_DATA.extraData[currentStandId].com = texto;
       document.getElementById('comentariosIconDot').style.display = texto ? 'block' : 'none';
+      // Actualizar badge 📝 en el stand del mapa sin recargar
+      const standElCom = document.querySelector(`.stand[data-num="${currentStandId}"]`);
+      if (standElCom) {
+        const existingComBadge = standElCom.querySelector('.com-badge');
+        if (texto && !existingComBadge) {
+          const badge = document.createElement('span');
+          badge.className = 'com-badge';
+          badge.title = 'Tiene comentario';
+          badge.textContent = '📝';
+          standElCom.appendChild(badge);
+        } else if (!texto && existingComBadge) {
+          existingComBadge.remove();
+        }
+      }
       clearBtnBusy(btn, 'Guardar comentario');
       btn.disabled = true; // el texto ya coincide con lo guardado, no hay nada nuevo que guardar
       msgEl.textContent = '';
