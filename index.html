@@ -557,6 +557,29 @@
   .loading-bar-wrap { width: 140px; height: 4px; background: #e5e5ea; border-radius: 2px; overflow: hidden; }
   .loading-bar { height: 100%; width: 0%; background: var(--accent); border-radius: 2px; transition: width .4s ease; }
 
+  /* ── SUCCESS OVERLAY (check de confirmación, pantalla completa) ── */
+  #successOverlay {
+    display: none; position: fixed; inset: 0; z-index: 600;
+    background: #ffffff;
+    align-items: center; justify-content: center; flex-direction: column; gap: 10px;
+    opacity: 0; transition: opacity .2s ease;
+  }
+  #successOverlay.visible { display: flex; }
+  #successOverlay.visible.shown { opacity: 1; }
+  @keyframes successPopIn { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .success-chk-wrap { position: relative; width: 64px; height: 64px; }
+  .success-chk-ring, .success-chk-mid, .success-chk-core { position: absolute; border-radius: 50%; }
+  .success-chk-ring { inset: 0; background: #c8f3d8; animation: successPopIn .35s ease both; }
+  .success-chk-mid  { inset: 8px; background: #7fe0a6; animation: successPopIn .35s ease .05s both; }
+  .success-chk-core {
+    inset: 17px; background: var(--pagado);
+    display: flex; align-items: center; justify-content: center;
+    animation: successPopIn .35s ease .1s both;
+  }
+  .success-title { font-size: 16px; font-weight: 700; color: var(--text); animation: fadeIn .25s ease .12s both; }
+  .success-sub   { font-size: 12.5px; color: var(--text3); animation: fadeIn .25s ease .16s both; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
   /* ── SPINNER INLINE (estado "guardando" dentro de un botón) ── */
   .btn-spinner {
     width: 14px; height: 14px; border-radius: 50%;
@@ -866,6 +889,19 @@
   </div>
 </div>
 
+<!-- SUCCESS OVERLAY -->
+<div id="successOverlay">
+  <div class="success-chk-wrap">
+    <div class="success-chk-ring"></div>
+    <div class="success-chk-mid"></div>
+    <div class="success-chk-core">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 12.5l5 5L20 6" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+  </div>
+  <div class="success-title" id="successTitle">Stand cargado</div>
+  <div class="success-sub" id="successSub"></div>
+</div>
+
 <!-- MODAL -->
 <div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
   <div class="modal" onclick="event.stopPropagation()">
@@ -1155,7 +1191,7 @@ let lastTap = 0;
 document.addEventListener('touchend', e => { const now=Date.now(); if(now-lastTap<300) e.preventDefault(); lastTap=now; }, {passive:false});
 
 // ── VERSIÓN DE LA APP ────────────────────────────────────────────────────────
-const APP_VERSION = 'v1.3';   // ← cambiá solo acá
+const APP_VERSION = 'v1.4';   // ← cambiá solo acá
 document.addEventListener('DOMContentLoaded', () => {
   const lv = document.getElementById('loginVersion');
   const hv = document.getElementById('headerVersion');
@@ -1782,16 +1818,18 @@ async function asignarFeriante() {
       return;
     }
 
-    // Todo OK: recargar mapa y cerrar. Acá sí vale la pena el overlay completo,
-    // porque se está recargando el mapa entero y cerrando el modal.
+    // Todo OK: recargar mapa (barra de progreso) y luego mostrar el check de
+    // confirmación en pantalla completa antes de cerrar el modal solo.
     msgEl.textContent = `✅ ${feriante} asignado y seña de $${monto.toLocaleString('es-AR')} registrada. Actualizando mapa...`;
     msgEl.className = 'assign-msg ok';
     setBtnBusy(btn, 'Actualizando mapa...');
     modalLocked = true;
     showLoading('Actualizando mapa...');
     await load();
+    hideLoading();
+    await showSuccessOverlay('Stand cargado', `${feriante} · Puesto ${currentStandId}`);
     document.getElementById('modalOverlay').classList.remove('open');
-    unlockModal();
+    modalLocked = false;
 
   } catch(err) {
     msgEl.textContent = 'Error de conexión.';
@@ -1848,6 +1886,71 @@ function hideLoading() {
       }, 200);
     }, 220);
   }, wait);
+}
+
+// ── SONIDO DE CONFIRMACIÓN (cha-ching + cola de campana) ────────────────────
+// Generado con Web Audio API: no depende de ningún archivo de audio externo.
+let _successAudioCtx = null;
+
+function _getSuccessAudioCtx() {
+  if (!_successAudioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    _successAudioCtx = new AC();
+  }
+  // Los navegadores suspenden el audio hasta el primer gesto del usuario;
+  // como esto se llama tras un click en "Asignar y señar", ya hay gesto.
+  if (_successAudioCtx.state === 'suspended') _successAudioCtx.resume();
+  return _successAudioCtx;
+}
+
+function _successTone(ctx, freq, start, dur, { type = 'sine', gain = 0.2 } = {}) {
+  const osc = ctx.createOscillator();
+  const g   = ctx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, start);
+  g.gain.setValueAtTime(0, start);
+  g.gain.linearRampToValueAtTime(gain, start + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.001, start + dur);
+  osc.connect(g).connect(ctx.destination);
+  osc.start(start);
+  osc.stop(start + dur + 0.02);
+}
+
+function playSuccessSound() {
+  const ctx = _getSuccessAudioCtx();
+  if (!ctx) return; // navegador sin soporte de Web Audio: seguimos sin sonido
+  const t = ctx.currentTime;
+  _successTone(ctx, 1567.98, t,        0.10, { type: 'triangle', gain: 0.20 });
+  _successTone(ctx, 2093,    t + 0.08, 0.16, { type: 'triangle', gain: 0.22 });
+  _successTone(ctx, 2093,    t + 0.24, 0.65, { type: 'sine',     gain: 0.14 }); // cola larga
+  _successTone(ctx, 3135,    t + 0.24, 0.5,  { type: 'sine',     gain: 0.05 }); // armónico de la cola
+}
+
+// Overlay de éxito (check animado, pantalla completa) para la confirmación
+// de carga de stand. Se muestra DESPUÉS del loading, antes de cerrar el modal.
+function showSuccessOverlay(title, subtitle, duration = 1200) {
+  return new Promise(resolve => {
+    const overlay = document.getElementById('successOverlay');
+    document.getElementById('successTitle').textContent = title;
+    document.getElementById('successSub').textContent = subtitle;
+
+    // Reinicia las animaciones por si el overlay ya se mostró antes
+    overlay.querySelectorAll('.success-chk-ring, .success-chk-mid, .success-chk-core')
+      .forEach(el => { el.style.animation = 'none'; void el.offsetWidth; el.style.animation = null; });
+
+    overlay.classList.add('visible');
+    requestAnimationFrame(() => overlay.classList.add('shown'));
+    playSuccessSound();
+
+    setTimeout(() => {
+      overlay.classList.remove('shown');
+      setTimeout(() => {
+        overlay.classList.remove('visible');
+        resolve();
+      }, 200); // espera el fade-out (misma duración que la transition de opacity)
+    }, duration);
+  });
 }
 
 // Estado "ocupado" inline en un botón (spinner + texto), para acciones rápidas
