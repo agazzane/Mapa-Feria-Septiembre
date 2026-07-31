@@ -79,57 +79,35 @@
     flex-shrink: 0;
   }
 
-  /* ── OCC DETAIL ITEMS — chips con fondo de color ── */
-  .occ-detail { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
-  .occ-detail-item {
-    display: flex; flex-direction: column; align-items: center;
-    padding: 5px 10px; border-radius: 10px; min-width: 46px;
-  }
-  .occ-detail-item .val { font-size: 18px; font-weight: 700; line-height: 1; }
-  .occ-detail-item .lbl { font-size: 10px; font-weight: 500; margin-top: 2px; opacity: .7; }
-  .occ-pagado { background: rgba(48,209,88,.18); }
-  .occ-pagado .val { color: #30d158; }
-  .occ-pagado .lbl { color: #30d158; }
-  .occ-senado { background: rgba(255,214,10,.18); }
-  .occ-senado .val { color: #ffd60a; }
-  .occ-senado .lbl { color: #ffd60a; }
-  .occ-libre  { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.12); }
-  .occ-libre  .val { color: rgba(255,255,255,.85); }
-  .occ-libre  .lbl { color: rgba(255,255,255,.5); }
-  .occ-total  { background: rgba(255,255,255,.1); }
-  .occ-total  .val { color: #ffffff; }
-  .occ-total  .lbl { color: rgba(255,255,255,.5); }
-
-  /* ── BARRA DE OCUPACIÓN ── */
+  /* ── BARRA DE OCUPACIÓN — una sola línea: %, barra larga, cuadraditos con valores ── */
   .occ-bar-wrap {
     background: #212d42;
     border-bottom: 1px solid rgba(255,255,255,.08);
-    padding: 12px 16px 14px;
+    padding: 10px 16px;
     flex-shrink: 0;
   }
-  .occ-bar-header {
-    display: flex; align-items: flex-end; justify-content: space-between;
-    margin-bottom: 10px;
+  .occ-bar-row { display: flex; align-items: center; gap: 10px; }
+  .occ-bar-pct {
+    font-size: 20px; font-weight: 700; color: #ffffff;
+    line-height: 1; letter-spacing: -.3px; flex-shrink: 0;
   }
-  .occ-bar-title {
-    font-size: 10px; font-weight: 600; color: rgba(255,255,255,.45);
-    text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px;
-  }
-  .occ-bar-pct { font-size: 30px; font-weight: 700; color: #ffffff; line-height: 1; letter-spacing: -.5px; }
-  .occ-detail { display: flex; gap: 14px; }
-  .occ-detail-item .val { font-size: 15px; font-weight: 700; color: #ffffff; line-height: 1; }
-  .occ-detail-item .lbl { font-size: 10px; color: rgba(255,255,255,.45); margin-top: 2px; text-align: right; font-weight: 500; }
   .occ-bar-track {
-    width: 100%; height: 8px; background: rgba(255,255,255,.12);
+    flex: 1 1 auto; min-width: 0; height: 8px; background: rgba(255,255,255,.12);
     border-radius: 4px; overflow: hidden; display: flex;
   }
   .occ-bar-seg { height: 100%; transition: width .6s cubic-bezier(.34,1.2,.64,1); }
   .occ-bar-seg#occSegPagado { background: #30d158; }
   .occ-bar-seg#occSegSenado { background: #ffd60a; }
   .occ-bar-seg#occSegDisp   { background: #e5e5ea; }
-  .occ-bar-legend { display: flex; justify-content: space-between; margin-top: 6px; }
-  .occ-bar-item { display: flex; align-items: center; gap: 5px; font-size: 14px; color: rgba(255,255,255,.65); font-weight: 600; }
-  .occ-bar-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .occ-chips { display: flex; gap: 5px; flex-shrink: 0; }
+  .occ-chip {
+    font-size: 12px; font-weight: 700; line-height: 1;
+    padding: 5px 8px; border-radius: 7px; min-width: 22px;
+    text-align: center;
+  }
+  .occ-chip-pagado { background: rgba(48,209,88,.2);  color: #30d158; }
+  .occ-chip-senado { background: rgba(255,214,10,.2); color: #ffd60a; }
+  .occ-chip-libre  { background: rgba(255,255,255,.12); color: rgba(255,255,255,.85); }
 
   /* ── STATS (oculto) ── */
   .stats { display: none; }
@@ -154,12 +132,29 @@
   }
   .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
 
-  /* ── FILTERS ── */
-  .filters {
-    padding: 8px 12px; display: flex; gap: 7px;
-    overflow-x: auto; scrollbar-width: none;
+  /* ── BUSCADOR + FILTROS — una sola línea: lupa angosta + filtros rápidos ── */
+  .search-filters-row {
+    padding: 8px 12px; display: flex; gap: 8px; align-items: center;
     background: var(--surface); border-bottom: 1px solid var(--border);
     flex-shrink: 0;
+  }
+  .search-wrap-compact {
+    flex: 0 0 38%; min-width: 0; max-width: 190px;
+    display: flex; align-items: center; gap: 6px;
+    background: var(--bg); border-radius: var(--radius-sm);
+    padding: 0 10px; height: 32px;
+  }
+  .search-icon { font-size: 13px; flex-shrink: 0; opacity: .6; }
+  .search-wrap-compact input {
+    flex: 1; min-width: 0; border: none; background: none; outline: none;
+    font-size: 14px; font-family: var(--font); color: var(--text);
+    padding: 0; height: 100%;
+  }
+  .search-wrap-compact input::placeholder { color: var(--text3); }
+
+  .filters {
+    flex: 1 1 auto; min-width: 0; display: flex; gap: 7px;
+    overflow-x: auto; scrollbar-width: none;
   }
   .filters::-webkit-scrollbar { display: none; }
   .filter-btn {
@@ -169,21 +164,10 @@
     cursor: pointer; white-space: nowrap;
     background: var(--surface); color: var(--text2); transition: all .15s;
   }
-  .filter-btn.active { background: var(--text); color: white; border-color: var(--text); }
-  .filter-btn[data-f="Pagado"].active     { background: #1a7f3c; color: white; border-color: #1a7f3c; }
-  .filter-btn[data-f="Señado"].active     { background: #a07800; color: white; border-color: #a07800; }
-  .filter-btn[data-f="Disponible"].active { background: #5e5ce6; color: white; border-color: #5e5ce6; }
-  .filter-btn[data-f="mobiliario"].active { background: #0d9488; color: white; border-color: #0d9488; }
+  .filter-btn.active                      { background: var(--text); color: white; border-color: var(--text); }
+  .filter-btn#filtroMobBtn.active         { background: #0d9488; color: white; border-color: #0d9488; }
+  .filter-btn#filtroDispBtn.active        { background: #5e5ce6; color: white; border-color: #5e5ce6; }
   .filter-btn.mis-ventas-btn.active       { background: var(--accent); color: white; border-color: var(--accent); }
-
-  /* ── SEARCH ── */
-  .search-wrap { padding: 8px 12px; background: var(--surface); border-bottom: 1px solid var(--border); flex-shrink: 0; }
-  .search-wrap input {
-    width: 100%; padding: 8px 14px; border: none; border-radius: var(--radius-sm);
-    font-size: 14px; font-family: var(--font); outline: none;
-    background: var(--bg); color: var(--text);
-  }
-  .search-wrap input::placeholder { color: var(--text3); }
 
   /* ── MAP ── */
   .floor { display: none; opacity: 0; }
@@ -750,29 +734,20 @@
   </div>
 </header>
 
-<!-- ── BARRA DE OCUPACIÓN ── -->
+<!-- ── BARRA DE OCUPACIÓN (una sola línea) ── -->
 <div class="occ-bar-wrap" id="occBarWrap">
-  <div class="occ-bar-header">
-    <div>
-      <div class="occ-bar-title">Ocupación general</div>
-      <div class="occ-bar-pct" id="occPct">—</div>
+  <div class="occ-bar-row">
+    <span class="occ-bar-pct" id="occPct">—</span>
+    <div class="occ-bar-track" id="occTrack">
+      <div class="occ-bar-seg" id="occSegPagado" style="width:0%"></div>
+      <div class="occ-bar-seg" id="occSegSenado" style="width:0%"></div>
+      <div class="occ-bar-seg" id="occSegDisp"   style="width:0%"></div>
     </div>
-    <div class="occ-detail" id="occDetail">
-      <div class="occ-detail-item occ-pagado"><div class="val" id="occValPagado">—</div><div class="lbl">Pagado</div></div>
-      <div class="occ-detail-item occ-senado"><div class="val" id="occValSenado">—</div><div class="lbl">Señado</div></div>
-      <div class="occ-detail-item occ-libre" ><div class="val" id="occValDisp">—</div><div class="lbl">Libre</div></div>
-      <div class="occ-detail-item occ-total" ><div class="val" id="occValTotal">—</div><div class="lbl">Total</div></div>
+    <div class="occ-chips" id="occDetail">
+      <span class="occ-chip occ-chip-pagado" id="occValPagado">—</span>
+      <span class="occ-chip occ-chip-senado" id="occValSenado">—</span>
+      <span class="occ-chip occ-chip-libre"  id="occValDisp">—</span>
     </div>
-  </div>
-  <div class="occ-bar-track" id="occTrack">
-    <div class="occ-bar-seg" id="occSegPagado" style="width:0%"></div>
-    <div class="occ-bar-seg" id="occSegSenado" style="width:0%"></div>
-    <div class="occ-bar-seg" id="occSegDisp"   style="width:0%"></div>
-  </div>
-  <div class="occ-bar-legend" id="occLegend">
-    <span class="occ-bar-item"><span class="occ-bar-dot" style="background:#22c55e"></span><span id="occLblPagado">Pagado —</span></span>
-    <span class="occ-bar-item"><span class="occ-bar-dot" style="background:#facc15"></span><span id="occLblSenado">Señado —</span></span>
-    <span class="occ-bar-item"><span class="occ-bar-dot" style="background:#c7c7cc"></span><span id="occLblDisp">Libre —</span></span>
   </div>
 </div>
 
@@ -783,17 +758,17 @@
   <button class="tab-btn"        onclick="switchFloor('pa', this)">🏢 Planta Alta</button>
 </div>
 
-<div class="search-wrap">
-  <input type="search" id="searchInput" placeholder="Buscar por número o feriante..." oninput="applyFilters()">
-</div>
-
-<div class="filters" id="filterBar">
-  <button class="filter-btn active" data-f="todos"      onclick="setFilter('todos', this)">Todos</button>
-  <button class="filter-btn"        data-f="mobiliario" onclick="setFilter('mobiliario', this)">🪑 Con mobiliario</button>
-  <button class="filter-btn"        data-f="Pagado"     onclick="setFilter('Pagado', this)">✅ Pagado</button>
-  <button class="filter-btn"        data-f="Señado"     onclick="setFilter('Señado', this)">⭐ Señado</button>
-  <button class="filter-btn"        data-f="Disponible" onclick="setFilter('Disponible', this)">🔓 Disponible</button>
-  <button class="filter-btn mis-ventas-btn" id="misVentasBtn" onclick="toggleMisVentas(this)">👤 Mis ventas</button>
+<!-- ── BUSCADOR + FILTROS (una sola línea) ── -->
+<div class="search-filters-row">
+  <div class="search-wrap-compact">
+    <span class="search-icon">🔍</span>
+    <input type="search" id="searchInput" placeholder="Buscar..." oninput="applyFilters()">
+  </div>
+  <div class="filters" id="filterBar">
+    <button class="filter-btn" id="filtroMobBtn"  onclick="toggleFiltro('mobiliario', this)">🪑 Con mobiliario</button>
+    <button class="filter-btn" id="filtroDispBtn" onclick="toggleFiltro('disponible', this)">🔓 Disponible</button>
+    <button class="filter-btn mis-ventas-btn" id="misVentasBtn" onclick="toggleMisVentas(this)">👤 Mis ventas</button>
+  </div>
 </div>
 
 <div class="floor active" id="floor-pb">
@@ -1224,7 +1199,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 const API_URL = "https://script.google.com/macros/s/AKfycbw1KPZO2gNyjKoj8GDdoG6QafGNt4EHbzugcqf66eNAt9hyLmw671EBtLZpRtmVX3VHNw/exec";
 
-let FULL_DATA = {}, currentFloor = 'pb', currentFilter = 'todos';
+let FULL_DATA = {}, currentFloor = 'pb';
 let FERIANTES_LIST = [];
 let LISTA_NEGRA = [];      // nombres normalizados (sin tildes, minúsculas, sin espacios extra)
 let VENDEDORES_LIST = [];  // solo usuarios con perfil 1, para el Admin
@@ -1389,13 +1364,13 @@ function buildStats() {
       visible[visible.length-1].style.borderRadius = '0 100px 100px 0';
     }
   }
-  // Leyenda inferior
+  // Leyenda inferior (opcional: puede no existir en el diseño compacto)
   const pPagadoLabel = total > 0 ? Math.round(nPagado/total*100) : 0;
   const pSenadoLabel = total > 0 ? Math.round(nSenado/total*100) : 0;
   const pDispLabel   = total > 0 ? Math.round(nDisp  /total*100) : 0;
-  document.getElementById('occLblPagado').textContent = `Pagado ${pPagadoLabel}%`;
-  document.getElementById('occLblSenado').textContent = `Señado ${pSenadoLabel}%`;
-  document.getElementById('occLblDisp').textContent   = `Libre ${pDispLabel}%`;
+  const lblP = document.getElementById('occLblPagado'); if (lblP) lblP.textContent = `Pagado ${pPagadoLabel}%`;
+  const lblS = document.getElementById('occLblSenado'); if (lblS) lblS.textContent = `Señado ${pSenadoLabel}%`;
+  const lblD = document.getElementById('occLblDisp');   if (lblD) lblD.textContent = `Libre ${pDispLabel}%`;
 
   // Detalle numérico Aurora
   const vp = document.getElementById('occValPagado'); if(vp) vp.textContent = nPagado;
@@ -1424,38 +1399,33 @@ function switchFloor(f, btn) {
   requestAnimationFrame(() => requestAnimationFrame(() => { aplicarZoom(); buildMinimap(); }));
 }
 
-function setFilter(f, btn) {
-  currentFilter = f;
-  document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  // Desactivar "Mis ventas" al cambiar filtro de estado
-  soloMisVentas = false;
-  document.getElementById('misVentasBtn').classList.remove('active');
+let filtroMobiliario = false, filtroDisponible = false;
+
+function toggleFiltro(tipo, btn) {
+  if (tipo === 'mobiliario') filtroMobiliario = !filtroMobiliario;
+  if (tipo === 'disponible') filtroDisponible = !filtroDisponible;
+  btn.classList.toggle('active');
   applyFilters();
 }
 
 function toggleMisVentas(btn) {
   soloMisVentas = !soloMisVentas;
   btn.classList.toggle('active', soloMisVentas);
-  // Si se activa "Mis ventas", resetear filtro de estado a "todos"
-  if (soloMisVentas) {
-    currentFilter = 'todos';
-    document.querySelectorAll('.filter-btn[data-f]').forEach(b=>b.classList.remove('active'));
-    document.querySelector('.filter-btn[data-f="todos"]').classList.add('active');
-  }
   applyFilters();
 }
 
 function applyFilters() {
   const q = document.getElementById('searchInput').value.toLowerCase().trim();
   const gridId = currentFloor==='pb' ? 'grid-pb' : 'grid-pa';
+  const anyActive = filtroMobiliario || filtroDisponible || soloMisVentas || !!q;
   document.querySelectorAll(`#${gridId} .stand`).forEach(el => {
-    const matchF    = currentFilter==='todos' || (currentFilter==='mobiliario' ? el.dataset.mob==='SI' : el.dataset.e===currentFilter);
+    const matchMob  = !filtroMobiliario || el.dataset.mob==='SI';
+    const matchDisp = !filtroDisponible || el.dataset.e==='Disponible';
     const matchS    = !q || el.dataset.num.includes(q) || (el.dataset.rb||'').toLowerCase().includes(q) || (el.dataset.n||'').toLowerCase().includes(q);
     const matchMine = !soloMisVentas || (el.dataset.resp||'').toLowerCase() === (CURRENT_USER||'').toLowerCase();
-    if (matchF && matchS && matchMine) {
+    if (matchMob && matchDisp && matchS && matchMine) {
       el.classList.remove('dimmed');
-      if (q || soloMisVentas) el.classList.add('highlighted'); else el.classList.remove('highlighted');
+      if (anyActive) el.classList.add('highlighted'); else el.classList.remove('highlighted');
     } else {
       el.classList.add('dimmed'); el.classList.remove('highlighted');
     }
