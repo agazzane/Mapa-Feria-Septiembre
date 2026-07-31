@@ -1264,8 +1264,12 @@ function renderMapUI() {
   const total = Object.keys(FULL_DATA.pbData).length + Object.keys(FULL_DATA.paData).length;
   const horaActualizacion = new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
   document.getElementById('subtitle').textContent = `${total} stands · Act. ${horaActualizacion}`;
-  aplicarZoom();
-  buildMinimap();
+  // Igual que en switchFloor(): esperamos al próximo repintado real antes de
+  // medir/centrar el mapa. Si se hace sincrónico (como estaba antes), en la
+  // carga inicial el navegador puede no tener el layout final todavía
+  // (fuentes, scrollbar, etc.) y el cálculo de centrado sale mal —
+  // por eso la Planta Baja aparecía pegada a la izquierda al abrir.
+  requestAnimationFrame(() => requestAnimationFrame(() => { aplicarZoom(); buildMinimap(); }));
 }
 
 async function load() {
