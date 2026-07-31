@@ -53,19 +53,26 @@
     border-bottom: 1px solid rgba(255,255,255,.08);
     padding: 10px 16px;
     position: sticky; top: 0; z-index: 100;
-    display: flex; align-items: center; gap: 12px;
+    display: flex; flex-direction: column; gap: 4px;
   }
+  .header-row-top { display: flex; align-items: center; gap: 10px; }
   .header-logo-sq {
-    width: 38px; height: 38px; border-radius: 10px;
+    width: 32px; height: 32px; border-radius: 9px;
     background: rgba(255,255,255,.12);
     display: flex; align-items: center; justify-content: center;
-    font-size: 20px; flex-shrink: 0;
+    font-size: 18px; flex-shrink: 0;
   }
-  .header-text { flex: 1; min-width: 0; }
-  header h1 {
+  .header-row-top h1 {
+    flex: 1; min-width: 0;
     font-size: 16px; font-weight: 700;
     color: #ffffff; letter-spacing: -.3px; line-height: 1.2;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
+  .header-row-bottom {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding-left: 42px;
+  }
+  .header-meta { min-width: 0; }
   header p { font-size: 11px; color: rgba(255,255,255,.5); margin-top: 1px; }
   .last-updated { font-size: 10px; color: rgba(255,255,255,.35); margin-top: 1px; }
   .login-user-pill {
@@ -182,7 +189,7 @@
   .floor { display: none; opacity: 0; }
   .floor.active { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; opacity: 1; animation: floorFade .22s ease; }
   @keyframes floorFade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-  .map-scroll { overflow: auto; padding: 6px; -webkit-overflow-scrolling: touch; flex: 1 1 auto; min-height: 320px; }
+  .map-scroll { overflow: auto; padding: 6px; -webkit-overflow-scrolling: touch; flex: 1 1 auto; min-height: 0; }
   .map-inner { position: relative; }
   .map-zoom  { transform-origin: top left; width: max-content; transition: transform 0.15s ease; position: relative; }
   .map-bg { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 0; }
@@ -237,11 +244,13 @@
 
   /* ── LEGEND ── */
   .legend {
-    padding: 12px 16px 24px; display: flex; flex-wrap: wrap; gap: 10px;
+    padding: 10px 16px; display: flex; gap: 16px; align-items: center;
+    overflow-x: auto; scrollbar-width: none;
     background: var(--surface); border-top: 1px solid var(--border);
     flex-shrink: 0;
   }
-  .leg-item { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text3); font-weight: 500; }
+  .legend::-webkit-scrollbar { display: none; }
+  .leg-item { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text3); font-weight: 500; white-space: nowrap; flex-shrink: 0; }
   .leg-dot { width: 12px; height: 12px; border-radius: 4px; flex-shrink: 0; }
 
   /* ── ZOOM ── */
@@ -728,13 +737,17 @@
 </div>
 
 <header>
-  <img src="https://raw.githubusercontent.com/agazzane/Mapa-Feria-Septiembre/main/SUCOVI.jpg" class="header-logo-sq" style="object-fit:cover;">
-  <div class="header-text">
+  <div class="header-row-top">
+    <img src="https://raw.githubusercontent.com/agazzane/Mapa-Feria-Septiembre/main/SUCOVI.jpg" class="header-logo-sq" style="object-fit:cover;">
     <h1>Feria Septiembre 2026 <span id="headerVersion"></span></h1>
-    <p id="subtitle">Sincronizando datos...</p>
-    <p id="lastUpdated" class="last-updated"></p>
   </div>
-  <button class="login-user-pill" id="userPill" onclick="cerrarSesion()" style="display:none">👤 <span id="userPillName"></span><span id="userPerfilBadge" style="display:none;margin-left:6px;font-size:10px;font-weight:700;background:rgba(0,0,0,.08);border-radius:10px;padding:1px 6px;color:#3a3a3c"></span> · Salir</button>
+  <div class="header-row-bottom">
+    <div class="header-meta">
+      <p id="subtitle">Sincronizando datos...</p>
+      <p id="lastUpdated" class="last-updated"></p>
+    </div>
+    <button class="login-user-pill" id="userPill" onclick="cerrarSesion()" style="display:none">👤 <span id="userPillName"></span><span id="userPerfilBadge" style="display:none;margin-left:6px;font-size:10px;font-weight:700;background:rgba(0,0,0,.08);border-radius:10px;padding:1px 6px;color:#3a3a3c"></span> · Salir</button>
+  </div>
 </header>
 
 <!-- ── BARRA DE OCUPACIÓN ── -->
@@ -803,7 +816,9 @@
       <text class="bg-label" x="69" y="1600" text-anchor="middle" fill="#475569" font-size="15">ACCESO</text>
       <text class="bg-label" x="69" y="1616" text-anchor="middle" fill="#475569" font-size="15">PLANTA ALTA</text>
       <text class="bg-label" x="69" y="1632" text-anchor="middle" fill="#475569" font-size="13">(escalera)</text>
-      <rect x="850" y="1220" width="1200" height="800" fill="#666666" rx="6"/>
+      <rect x="850" y="1220" width="1200" height="800" fill="#cbd5e1" rx="6"/>
+      <text class="bg-label" x="1450" y="1600" text-anchor="middle" fill="#475569" font-size="34">DEPÓSITO</text>
+      <text class="bg-label" x="1450" y="1644" text-anchor="middle" fill="#475569" font-size="34">ZONA TÉCNICA</text>
       <rect x="0" y="1670" width="620" height="300" fill="#bbf7d0" rx="4"/>
       <rect x="1610" y="510" width="180" height="80" fill="#475569" rx="5"/><text class="bg-label" x="1705" y="560" text-anchor="middle" fill="white" font-size="28">MESA</text>
       <rect x="1610" y="630" width="180" height="80" fill="#475569" rx="5"/><text class="bg-label" x="1705" y="680" text-anchor="middle" fill="white" font-size="28">MESA</text>
