@@ -2678,12 +2678,16 @@ async function cargarPago() {
       document.getElementById('modalDebeBox').className = 'money-box ' + (ex.d > 0 ? 'debe-mal' : 'debe-ok');
 
       if (ex.d === 0) {
-        // Deuda saldada: toast + bloquear modal, recargar mapa y recién cerrar.
-        // Acá sí conviene el overlay completo (se recarga el mapa entero).
+        // Deuda saldada: primero el toast (bien visible), y recién después
+        // el overlay de "Actualizando mapa". Si los disparamos juntos, el
+        // overlay (z-index más alto) tapa el toast apenas aparece.
+        // La pausa es puramente visual: el pago ya se guardó en el paso
+        // anterior (el fetch ya resolvió), así que no demora nada del back.
+        msgEl.textContent = '';
+        msgEl.className   = 'pago-msg';
         showToast(`✅ Pago ${pagoNumActual} registrado. Stand Pagado`);
-        msgEl.textContent = 'Actualizando mapa...';
-        msgEl.className   = 'pago-msg ok';
         setBtnBusy(btn, 'Actualizando mapa...');
+        await new Promise(r => setTimeout(r, 900));
         lockModal('Actualizando mapa...');
         await load();
         document.getElementById('modalOverlay').classList.remove('open');
