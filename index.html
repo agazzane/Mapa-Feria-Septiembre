@@ -2012,6 +2012,18 @@ function showSuccessOverlay(title, subtitle, mapLoadPromise = Promise.resolve())
   });
 }
 
+// ── SONIDO DE TOAST (confirmación corta, distinta del cha-ching de alta de stand) ──
+// Reutiliza el mismo AudioContext/helper que playSuccessSound() para no duplicar setup.
+function playToastSound() {
+  const ctx = _getSuccessAudioCtx();
+  if (!ctx) return; // navegador sin soporte de Web Audio: seguimos sin sonido
+  const t = ctx.currentTime;
+  _successTone(ctx, 660,  t,        0.12, { type: 'triangle', gain: 0.18 });
+  _successTone(ctx, 880,  t + 0.10, 0.12, { type: 'triangle', gain: 0.20 });
+  _successTone(ctx, 1175, t + 0.20, 0.30, { type: 'triangle', gain: 0.24 });
+  _successTone(ctx, 1175, t + 0.42, 0.35, { type: 'sine',     gain: 0.06 }); // cola/eco suave
+}
+
 // ── TOAST ────────────────────────────────────────────────────────────────────
 let _toastTimer = null;
 function showToast(msg, type = 'ok', duration = 2500) {
@@ -2023,6 +2035,7 @@ function showToast(msg, type = 'ok', duration = 2500) {
   el.className = `toast ${type}`;
   el.textContent = msg;
   container.appendChild(el);
+  if (type === 'ok') playToastSound();
   _toastTimer = setTimeout(() => {
     el.classList.add('out');
     setTimeout(() => { if (el.parentNode) el.remove(); }, 230);
@@ -2675,12 +2688,12 @@ async function cargarPago() {
         document.getElementById('modalOverlay').classList.remove('open');
         unlockModal();
       } else {
-        // Aún debe: actualizar la UI del modal normalmente
+        // Aún debe: igual que en la deuda saldada, mostramos el toast y cerramos el modal
         clearBtnBusy(btn, 'Registrar pago');
         msgEl.textContent = '';
         msgEl.className   = 'pago-msg';
         showToast(`✅ Pago ${pagoNumActual} registrado`);
-        setTimeout(() => { renderPagos(ex); }, 1200);
+        setTimeout(() => { closeModal(); }, 1200);
         return;
       }
     } else {
