@@ -576,9 +576,16 @@
     display: flex; align-items: center; justify-content: center;
     animation: successPopIn .35s ease .1s both;
   }
-  .success-title { font-size: 16px; font-weight: 700; color: var(--text); animation: fadeIn .25s ease .12s both; }
-  .success-sub   { font-size: 12.5px; color: var(--text3); animation: fadeIn .25s ease .16s both; }
+  .success-title { font-size: 22px; font-weight: 700; color: var(--text); animation: fadeIn .25s ease .12s both; }
+  .success-sub   { font-size: 16px; color: var(--text2); animation: fadeIn .25s ease .16s both; text-align: center; }
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .success-continue-btn {
+    margin-top: 18px; min-width: 220px;
+    background: var(--pagado); color: #fff; border: none; border-radius: 14px;
+    padding: 14px 40px; font-size: 16px; font-weight: 600; font-family: var(--font);
+    animation: fadeIn .25s ease .2s both;
+  }
+  .success-continue-btn:active { transform: scale(.97); }
 
   /* ── SPINNER INLINE (estado "guardando" dentro de un botón) ── */
   .btn-spinner {
@@ -900,6 +907,7 @@
   </div>
   <div class="success-title" id="successTitle">Stand cargado</div>
   <div class="success-sub" id="successSub"></div>
+  <button class="success-continue-btn" id="successContinueBtn">Continuar</button>
 </div>
 
 <!-- MODAL -->
@@ -1818,16 +1826,16 @@ async function asignarFeriante() {
       return;
     }
 
-    // Todo OK: recargar mapa (barra de progreso) y luego mostrar el check de
-    // confirmación en pantalla completa antes de cerrar el modal solo.
+    // Todo OK: mostramos el check de confirmación ya mismo (pantalla completa,
+    // fijo, con botón "Continuar") y la recarga del mapa se dispara en paralelo
+    // de fondo. Si el usuario aprieta "Continuar" antes de que el mapa haya
+    // terminado de actualizarse, recién ahí se muestra la ruedita de carga.
     msgEl.textContent = `✅ ${feriante} asignado y seña de $${monto.toLocaleString('es-AR')} registrada. Actualizando mapa...`;
     msgEl.className = 'assign-msg ok';
     setBtnBusy(btn, 'Actualizando mapa...');
     modalLocked = true;
-    showLoading('Actualizando mapa...');
-    await load();
-    hideLoading();
-    await showSuccessOverlay('Stand cargado', `${feriante} · Puesto ${currentStandId}`);
+    const mapLoadPromise = load();
+    await showSuccessOverlay('Stand cargado', `${feriante} · Puesto ${currentStandId}`, mapLoadPromise);
     document.getElementById('modalOverlay').classList.remove('open');
     modalLocked = false;
 
@@ -1928,10 +1936,15 @@ function playSuccessSound() {
 }
 
 // Overlay de éxito (check animado, pantalla completa) para la confirmación
-// de carga de stand. Se muestra DESPUÉS del loading, antes de cerrar el modal.
-function showSuccessOverlay(title, subtitle, duration = 1200) {
+// de carga de stand. Se muestra apenas se confirma la asignación/seña, y
+// queda fijo hasta que el usuario aprieta "Continuar". El mapa se recarga
+// de fondo mientras tanto (mapLoadPromise); si el usuario aprieta el botón
+// antes de que esa recarga termine, se muestra la ruedita de carga hasta
+// que esté lista.
+function showSuccessOverlay(title, subtitle, mapLoadPromise = Promise.resolve()) {
   return new Promise(resolve => {
     const overlay = document.getElementById('successOverlay');
+    const btn = document.getElementById('successContinueBtn');
     document.getElementById('successTitle').textContent = title;
     document.getElementById('successSub').textContent = subtitle;
 
@@ -1943,13 +1956,36 @@ function showSuccessOverlay(title, subtitle, duration = 1200) {
     requestAnimationFrame(() => overlay.classList.add('shown'));
     playSuccessSound();
 
-    setTimeout(() => {
+    let mapReady = false;
+    mapLoadPromise.then(() => { mapReady = true; }).catch(() => { mapReady = true; });
+
+    const finish = () => {
       overlay.classList.remove('shown');
       setTimeout(() => {
         overlay.classList.remove('visible');
         resolve();
-      }, 200); // espera el fade-out (misma duración que la transition de opacity)
-    }, duration);
+      }, 200);
+    };
+
+    const onContinue = () => {
+      btn.removeEventListener('click', onContinue);
+      if (mapReady) {
+        finish();
+        return;
+      }
+      // El mapa todavía se está actualizando: recién acá mostramos la
+      // ruedita de carga, y cerramos todo cuando termine.
+      showLoading('Actualizando mapa...');
+      mapLoadPromise.then(() => {
+        hideLoading();
+        finish();
+      }).catch(() => {
+        hideLoading();
+        finish();
+      });
+    };
+
+    btn.addEventListener('click', onContinue);
   });
 }
 
