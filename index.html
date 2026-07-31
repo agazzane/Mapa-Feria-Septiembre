@@ -1,5 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
+<head><!DOCTYPE html>
+<html lang="es">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -1253,70 +1255,45 @@ function estaEnListaNegra(nombre) {
   return LISTA_NEGRA.includes(normalizarNombre(nombre));
 }
 
+// Redibuja el mapa (grillas, stats, minimapa) a partir de FULL_DATA ya en
+// memoria, sin pedir nada al servidor. Se usa tanto al final de load() como
+// cuando una acción puntual (asignar, mobiliario adicional) ya actualizó
+// FULL_DATA localmente y solo hace falta refrescar la pantalla.
+function renderMapUI() {
+  buildGrid('grid-pb', FULL_DATA.pbData);
+  buildGrid('grid-pa', FULL_DATA.paData);
+  buildStats();
+  const total = Object.keys(FULL_DATA.pbData).length + Object.keys(FULL_DATA.paData).length;
+  const horaActualizacion = new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+  document.getElementById('subtitle').textContent = `${total} stands · Act. ${horaActualizacion}`;
+  aplicarZoom();
+  buildMinimap();
+}
+
 async function load() {
   if (!modalLocked) showLoading('Cargando mapa...');
   try {
-    // Estas 4 listas casi no cambian durante la feria: si ya las tenemos en
-    // memoria, no las volvemos a pedir. El mapa (estado de los stands) sí se
-    // pide siempre, para mantener la sincronización entre usuarios.
-    const needFeriantes  = FERIANTES_LIST.length === 0;
-    const needPrecios    = Object.keys(PRECIOS_MOB).length === 0;
-    const needUsuarios   = VENDEDORES_LIST.length === 0;
-    const needMedios     = MEDIOS_PAGO.length === 0;
-
-    const [resMap, resFeriantes, resListaNegra, resPrecios, resUsuarios, resMedios] = await Promise.all([
-      fetch(API_URL),
-      needFeriantes  ? fetch(API_URL + '?tipo=feriantes')  : Promise.resolve(null),
-      fetch(API_URL + '?tipo=listanegra'), // se recarga siempre, es poca info y puede cambiar
-      needPrecios    ? fetch(API_URL + '?tipo=precios')    : Promise.resolve(null),
-      needUsuarios   ? fetch(API_URL + '?tipo=usuarios')   : Promise.resolve(null),
-      needMedios     ? fetch(API_URL + '?tipo=medios')     : Promise.resolve(null)
-    ]);
+    // El endpoint principal ahora devuelve todo en una sola respuesta
+    // (mapa + feriantes + lista negra + precios + usuarios + medios), en vez
+    // de 6 requests separados a Apps Script. Cada uno de esos 6 abría la
+    // planilla por su cuenta y competía por los mismos recursos, así que
+    // esto reduce bastante el tiempo de carga.
+    const resMap = await fetch(API_URL);
     FULL_DATA = await resMap.json();
-    if (resFeriantes) {
-      const ferData = await resFeriantes.json();
-      if (ferData.ok && ferData.feriantes) {
-        FERIANTES_LIST = ferData.feriantes;
-      }
+
+    if (FULL_DATA.feriantes)  FERIANTES_LIST = FULL_DATA.feriantes;
+    if (FULL_DATA.listaNegra) LISTA_NEGRA    = FULL_DATA.listaNegra.map(normalizarNombre);
+    if (FULL_DATA.precios)    PRECIOS_MOB    = FULL_DATA.precios;
+    // Usuarios/vendedores: para que el combo Admin esté disponible
+    // independientemente de si hay sesión guardada o no
+    if (FULL_DATA.usuarios) {
+      VENDEDORES_LIST = FULL_DATA.usuarios
+        .filter(u => u.perfil === 1)
+        .map(u => u.nombre);
     }
-    if (resListaNegra) {
-      const lnData = await resListaNegra.json();
-      if (lnData.ok && lnData.listaNegra) {
-        LISTA_NEGRA = lnData.listaNegra.map(normalizarNombre);
-      }
-    }
-    if (resPrecios) {
-      const precData = await resPrecios.json();
-      if (precData.ok && precData.precios) {
-        PRECIOS_MOB = precData.precios;
-      }
-    }
-    // Usuarios/vendedores: se cargan si todavía no están, para que el combo
-    // Admin esté disponible independientemente de si hay sesión guardada o no
-    if (resUsuarios) {
-      const usrData = await resUsuarios.json();
-      if (usrData.ok && usrData.usuarios) {
-        VENDEDORES_LIST = usrData.usuarios
-          .filter(u => u.perfil === 1)
-          .map(u => u.nombre);
-      }
-    }
-    // Medios de pago: se cargan si todavía no están, para que no haya fetch
-    // adicional al abrir el primer modal
-    if (resMedios) {
-      const medData = await resMedios.json();
-      if (medData.ok && medData.medios) {
-        MEDIOS_PAGO = medData.medios;
-      }
-    }
-    buildGrid('grid-pb', FULL_DATA.pbData);
-    buildGrid('grid-pa', FULL_DATA.paData);
-    buildStats();
-    const total = Object.keys(FULL_DATA.pbData).length + Object.keys(FULL_DATA.paData).length;
-    const horaActualizacion = new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
-    document.getElementById('subtitle').textContent = `${total} stands · Act. ${horaActualizacion}`;
-    aplicarZoom();
-    buildMinimap();
+    if (FULL_DATA.medios) MEDIOS_PAGO = FULL_DATA.medios;
+
+    renderMapUI();
     if (!modalLocked) hideLoading();
   } catch(e) {
     if (!modalLocked) hideLoading();
@@ -1861,18 +1838,29 @@ async function asignarFeriante() {
       return;
     }
 
-    // Todo OK: mostramos el check de confirmación ya mismo (pantalla completa,
-    // fijo, con botón "Continuar") y la recarga del mapa se dispara en paralelo
-    // de fondo. Si el usuario aprieta "Continuar" antes de que el mapa haya
-    // terminado de actualizarse, recién ahí se muestra la ruedita de carga.
-    msgEl.textContent = `✅ ${feriante} asignado y seña de $${monto.toLocaleString('es-AR')} registrada. Actualizando mapa...`;
+    // Todo OK: patcheamos el stand localmente (pasa a Señado, con el
+    // feriante y la seña recién cargada) en vez de re-pedir el mapa entero.
+    const standObj = FULL_DATA.pbData[currentStandId] || FULL_DATA.paData[currentStandId];
+    if (standObj) standObj.e = 'Señado';
+    if (!FULL_DATA.extraData) FULL_DATA.extraData = {};
+    if (!FULL_DATA.extraData[currentStandId]) FULL_DATA.extraData[currentStandId] = {};
+    const exAsig = FULL_DATA.extraData[currentStandId];
+    exAsig.n         = feriante;
+    exAsig.condicion = selectedFerianteEsNuevo ? 'NUEVO' : 'HABITUAL';
+    exAsig.p1r       = responsableAsign;
+    exAsig.p1f       = formatFecha(new Date());
+    exAsig.p1m       = monto;
+    exAsig.p1med     = medio;
+    exAsig.d         = Math.max(0, precio - monto);
+    MOB_ITEMS.forEach(m => { exAsig[m.key] = mobQty[m.key] || 0; });
+
+    msgEl.textContent = `✅ ${feriante} asignado y seña de $${monto.toLocaleString('es-AR')} registrada.`;
     msgEl.className = 'assign-msg ok';
-    setBtnBusy(btn, 'Actualizando mapa...');
-    modalLocked = true;
-    const mapLoadPromise = load();
-    await showSuccessOverlay('Stand cargado', `${feriante} · Puesto ${currentStandId}`, mapLoadPromise);
+    renderMapUI();
+    await showSuccessOverlay('Stand cargado', `${feriante} · Puesto ${currentStandId}`);
     document.getElementById('modalOverlay').classList.remove('open');
     modalLocked = false;
+    setAssignFieldsDisabled(false);
 
   } catch(err) {
     msgEl.textContent = 'Error de conexión.';
@@ -3073,15 +3061,3240 @@ async function venderMobAdicional() {
     const res  = await fetch(url);
     const data = await res.json();
     if (data.ok) {
+      // Patch local: sumamos las cantidades vendidas al mobiliario ya
+      // cargado del stand, en vez de re-pedir el mapa entero.
+      if (!FULL_DATA.extraData) FULL_DATA.extraData = {};
+      if (!FULL_DATA.extraData[currentStandId]) FULL_DATA.extraData[currentStandId] = {};
+      const exMob = FULL_DATA.extraData[currentStandId];
+      MOB_ITEMS.forEach(m => {
+        const qty = mobAdicionalQty[m.key] || 0;
+        if (qty > 0) exMob[m.key] = (Number(exMob[m.key]) || 0) + qty;
+      });
+
       msgEl.textContent = '';
       msgEl.className = 'mob-adicional-msg';
       showToast('✅ Mobiliario adicional registrado');
-      // Acá sí conviene el overlay completo: se recarga el mapa entero y se cierra el modal.
-      setBtnBusy(btn, 'Actualizando mapa...');
-      lockModal('Actualizando mapa...');
-      await load();
+      renderMapUI();
       document.getElementById('modalOverlay').classList.remove('open');
-      unlockModal();
+    } else {
+      clearBtnBusy(btn, 'Registrar venta de mobiliario');
+      msgEl.textContent = data.error || 'Error al registrar el mobiliario adicional.';
+      msgEl.className = 'mob-adicional-msg err';
+    }
+  } catch(err) {
+    clearBtnBusy(btn, 'Registrar venta de mobiliario');
+    msgEl.textContent = 'Error de conexión.';
+    msgEl.className = 'mob-adicional-msg err';
+  }
+}
+
+// ── COMENTARIOS (ícono en header + panel aparte, perfil 1 y 3) ──────────────
+let comentarioOriginal = '';
+
+function resetComentariosUI(texto) {
+  comentarioOriginal = texto || '';
+  document.getElementById('comentariosTexto').value = comentarioOriginal;
+  document.getElementById('comentariosMsg').textContent = '';
+  document.getElementById('comentariosMsg').className = 'comentarios-msg';
+  document.getElementById('comentariosIconDot').style.display = comentarioOriginal ? 'block' : 'none';
+  checkComentariosBtn();
+}
+
+function openComentariosPanel() {
+  document.getElementById('mainPanel').classList.add('hidden');
+  document.getElementById('mobPanel').classList.remove('active');
+  document.getElementById('altaPanel').classList.remove('active');
+  document.getElementById('comentariosPanel').classList.add('active');
+}
+
+function closeComentariosPanel() {
+  document.getElementById('comentariosPanel').classList.remove('active');
+  document.getElementById('mainPanel').classList.remove('hidden');
+}
+
+function checkComentariosBtn() {
+  const texto = document.getElementById('comentariosTexto').value;
+  document.getElementById('comentariosBtn').disabled = (texto.trim() === comentarioOriginal.trim());
+}
+
+async function guardarComentario() {
+  const btn   = document.getElementById('comentariosBtn');
+  const msgEl = document.getElementById('comentariosMsg');
+  const texto = document.getElementById('comentariosTexto').value.trim();
+  if (!currentStandId) return;
+
+  msgEl.textContent = '';
+  msgEl.className = 'comentarios-msg';
+  setBtnBusy(btn, 'Guardando...');
+
+  try {
+    const url  = `${API_URL}?tipo=comentario&stand=${encodeURIComponent(currentStandId)}&user=${encodeURIComponent(CURRENT_USER)}&texto=${encodeURIComponent(texto)}`;
+    const res  = await fetch(url);
+    const data = await res.json();
+    if (data.ok) {
+      comentarioOriginal = texto;
+      if (!FULL_DATA.extraData) FULL_DATA.extraData = {};
+      if (!FULL_DATA.extraData[currentStandId]) FULL_DATA.extraData[currentStandId] = {};
+      FULL_DATA.extraData[currentStandId].com = texto;
+      document.getElementById('comentariosIconDot').style.display = texto ? 'block' : 'none';
+      // Actualizar badge 📝 en el stand del mapa sin recargar
+      const standElCom = document.querySelector(`.stand[data-num="${currentStandId}"]`);
+      if (standElCom) {
+        const existingComBadge = standElCom.querySelector('.com-badge');
+        if (texto && !existingComBadge) {
+          const badge = document.createElement('span');
+          badge.className = 'com-badge';
+          badge.title = 'Tiene comentario';
+          badge.textContent = '📝';
+          standElCom.appendChild(badge);
+        } else if (!texto && existingComBadge) {
+          existingComBadge.remove();
+        }
+      }
+      clearBtnBusy(btn, 'Guardar comentario');
+      btn.disabled = true; // el texto ya coincide con lo guardado, no hay nada nuevo que guardar
+      msgEl.textContent = '';
+      msgEl.className = 'comentarios-msg';
+      showToast('✅ Comentario guardado');
+      document.getElementById('modalOverlay').classList.remove('open');
+    } else {
+      clearBtnBusy(btn, 'Guardar comentario');
+      msgEl.textContent = data.error || 'Error al guardar el comentario.';
+      msgEl.className = 'comentarios-msg err';
+    }
+  } catch(err) {
+    clearBtnBusy(btn, 'Guardar comentario');
+    msgEl.textContent = 'Error de conexión.';
+    msgEl.className = 'comentarios-msg err';
+  }
+}
+
+initLogin();
+
+// ── SWIPE / DRAG DOWN PARA CERRAR MODAL (touch + mouse) ─────────────────────
+(function() {
+  const overlay = document.getElementById('modalOverlay');
+  let startY = 0, currentY = 0, dragging = false, modalEl = null;
+
+  function onStart(y) {
+    if (modalLocked) return;
+    modalEl = overlay.querySelector('.modal');
+    if (!modalEl) return;
+    startY = currentY = y;
+    dragging = (modalEl.scrollTop === 0);
+    if (dragging) modalEl.style.transition = 'none';
+  }
+  function onMove(y) {
+    if (!dragging || modalLocked) return;
+    currentY = y;
+    const delta = Math.max(0, currentY - startY);
+    if (delta > 0) modalEl.style.overflowY = 'hidden';
+    modalEl.style.transform = `translateY(${delta}px)`;
+  }
+  function onEnd() {
+    if (!dragging || modalLocked) return;
+    dragging = false;
+    modalEl.style.overflowY = '';
+    const delta = currentY - startY;
+    modalEl.style.transition = '';
+    if (delta > 90) {
+      modalEl.style.transform = `translateY(110%)`;
+      setTimeout(() => {
+        overlay.classList.remove('open');
+        modalEl.style.transform = '';
+      }, 260);
+    } else {
+      modalEl.style.transform = '';
+    }
+  }
+
+  // Touch
+  overlay.addEventListener('touchstart', e => onStart(e.touches[0].clientY), { passive: true });
+  overlay.addEventListener('touchmove',  e => onMove(e.touches[0].clientY),  { passive: true });
+  overlay.addEventListener('touchend',   onEnd);
+
+  // Mouse (desktop)
+  overlay.addEventListener('mousedown', e => { onStart(e.clientY); });
+  window.addEventListener('mousemove',  e => { if (dragging) { e.preventDefault(); onMove(e.clientY); } });
+  window.addEventListener('mouseup',    onEnd);
+})();
+
+</script>
+</body>
+</html>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Mapa de Stands – Feria Septiembre 2026</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --pagado: #30d158;    --pagado-t: #0a3d1f;
+    --senado: #ffd60a;    --senado-t: #3d2c00;
+    --disp:   #ffffff;    --disp-t:   #3a3a3c;
+    --excedido:#ff6b2b;   --excedido-t:#3d1500;
+    --bg:      #f2f2f7;
+    --surface: #ffffff;
+    --surface2:#f2f2f7;
+    --border:  rgba(60,60,67,.12);
+    --text:    #1c1c1e;
+    --text2:   #3a3a3c;
+    --text3:   #8e8e93;
+    --accent:  #007aff;
+    --font:    'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif;
+    --radius:  12px;
+    --radius-sm: 8px;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,.08);
+    --shadow:    0 4px 16px rgba(0,0,0,.1);
+    --shadow-lg: 0 8px 32px rgba(0,0,0,.14);
+  }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    height: 100%;
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── HEADER ── */
+  header {
+    flex-shrink: 0;
+    background: #1a2236;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+    padding: 8px 14px;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .header-row-top {
+    display: flex; align-items: center; gap: 10px;
+  }
+  .header-logo-sq {
+    width: 36px; height: 36px; border-radius: 10px;
+    background: rgba(255,255,255,.12);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; flex-shrink: 0; object-fit: cover;
+  }
+  .header-title-block {
+    flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px;
+  }
+  .header-row-top h1 {
+    font-size: 15px; font-weight: 700;
+    color: #ffffff; letter-spacing: -.3px; line-height: 1.2;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  header p { font-size: 11px; color: rgba(255,255,255,.5); margin: 0; line-height: 1.3; }
+  .last-updated { display: none; }
+  .login-user-pill {
+    flex-shrink: 0;
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(255,255,255,.12); border-radius: 100px;
+    padding: 4px 10px 4px 4px; font-size: 12px; color: rgba(255,255,255,.9);
+    cursor: pointer; border: none;
+    font-family: var(--font); font-weight: 600; transition: background .15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .login-user-pill:hover { background: rgba(255,255,255,.2); }
+  .user-pill-avatar {
+    width: 24px; height: 24px; border-radius: 50%;
+    background: var(--accent); color: #fff;
+    font-size: 12px; font-weight: 700; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; text-transform: uppercase;
+  }
+
+  /* ── BARRA DE OCUPACIÓN — una sola línea: %, barra larga, cuadraditos con valores ── */
+  .occ-bar-wrap {
+    background: #212d42;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+    padding: 10px 16px;
+    flex-shrink: 0;
+  }
+  .occ-bar-row { display: flex; align-items: center; gap: 10px; }
+  .occ-bar-pct {
+    font-size: 20px; font-weight: 700; color: #ffffff;
+    line-height: 1; letter-spacing: -.3px; flex-shrink: 0;
+  }
+  .occ-bar-track {
+    flex: 1 1 auto; min-width: 0; height: 8px; background: rgba(255,255,255,.12);
+    border-radius: 4px; overflow: hidden; display: flex;
+  }
+  .occ-bar-seg { height: 100%; transition: width .6s cubic-bezier(.34,1.2,.64,1); }
+  .occ-bar-seg#occSegPagado { background: #30d158; }
+  .occ-bar-seg#occSegSenado { background: #ffd60a; }
+  .occ-bar-seg#occSegDisp   { background: #e5e5ea; }
+  .occ-chips { display: flex; gap: 5px; flex-shrink: 0; }
+  .occ-chip {
+    font-size: 12px; font-weight: 700; line-height: 1;
+    padding: 5px 8px; border-radius: 7px; min-width: 22px;
+    text-align: center;
+  }
+  .occ-chip-pagado { background: rgba(48,209,88,.2);  color: #30d158; }
+  .occ-chip-senado { background: rgba(255,214,10,.2); color: #ffd60a; }
+  .occ-chip-libre  { background: rgba(255,255,255,.12); color: rgba(255,255,255,.85); }
+
+  /* ── STATS (oculto) ── */
+  .stats { display: none; }
+
+  /* ── TABS ── */
+  .tabs {
+    display: flex; padding: 0 8px;
+    background: rgba(255,255,255,.88);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 54px; z-index: 90;
+    flex-shrink: 0;
+  }
+  .tab-btn {
+    flex: 1; padding: 10px 8px;
+    font-size: 13px; font-weight: 500;
+    font-family: var(--font); border: none; background: none;
+    cursor: pointer; color: var(--text3);
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+    transition: color .18s, border-color .18s;
+  }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+
+  /* ── BUSCADOR + FILTROS — una sola línea: lupa angosta + filtros rápidos ── */
+  .search-filters-row {
+    padding: 8px 12px; display: flex; gap: 8px; align-items: center;
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .search-wrap-compact {
+    flex: 0 0 38%; min-width: 0; max-width: 190px;
+    display: flex; align-items: center; gap: 6px;
+    background: var(--bg); border-radius: var(--radius-sm);
+    padding: 0 10px; height: 32px;
+  }
+  .search-icon { font-size: 13px; flex-shrink: 0; opacity: .6; }
+  .search-wrap-compact input {
+    flex: 1; min-width: 0; border: none; background: none; outline: none;
+    font-size: 14px; font-family: var(--font); color: var(--text);
+    padding: 0; height: 100%;
+  }
+  .search-wrap-compact input::placeholder { color: var(--text3); }
+
+  .filters {
+    flex: 1 1 auto; min-width: 0; display: flex; gap: 7px;
+    overflow-x: auto; scrollbar-width: none;
+  }
+  .filters::-webkit-scrollbar { display: none; }
+  .filter-btn {
+    padding: 5px 14px; border-radius: 100px;
+    border: 1.5px solid var(--border);
+    font-size: 12px; font-weight: 500; font-family: var(--font);
+    cursor: pointer; white-space: nowrap;
+    background: var(--surface); color: var(--text2); transition: all .15s;
+  }
+  .filter-btn.active                      { background: var(--text); color: white; border-color: var(--text); }
+  .filter-btn#filtroMobBtn.active         { background: #0d9488; color: white; border-color: #0d9488; }
+  .filter-btn#filtroDispBtn.active        { background: #5e5ce6; color: white; border-color: #5e5ce6; }
+  .filter-btn.mis-ventas-btn.active       { background: var(--accent); color: white; border-color: var(--accent); }
+
+  /* ── MAP ── */
+  .floor { display: none; opacity: 0; }
+  .floor.active { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; opacity: 1; animation: floorFade .22s ease; }
+  @keyframes floorFade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+  .map-scroll { overflow: auto; padding: 6px; -webkit-overflow-scrolling: touch; flex: 1 1 auto; min-height: 0; }
+  .map-inner { position: relative; }
+  .map-zoom  { transform-origin: top left; width: max-content; transition: transform 0.15s ease; position: relative; }
+  .map-bg { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 0; }
+  .grid { display: grid; gap: 2px; grid-auto-rows: 30px; position: relative; z-index: 1; }
+
+  /* ── STANDS ── */
+  .stand {
+    border-radius: 10px; padding: 3px 3px 2px; cursor: pointer;
+    transition: transform .15s cubic-bezier(.34,1.56,.64,1), box-shadow .15s, opacity .22s ease;
+    border: 1.5px solid transparent;
+    width: 136px; height: 62px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; position: relative; user-select: none;
+  }
+  .stand:active { transform: scale(.93); }
+  .stand[data-e="Pagado"]     { background: var(--pagado);   color: var(--pagado-t);   box-shadow: 0 1px 4px rgba(48,209,88,.3); }
+  .stand[data-e="Señado"]     { background: var(--senado);   color: var(--senado-t);   box-shadow: 0 1px 4px rgba(255,214,10,.35); }
+  .stand[data-e="Disponible"] { background: var(--disp);     color: var(--disp-t);     border-color: #5e5ce6; box-shadow: 0 1px 4px rgba(94,92,230,.15); }
+  .stand[data-e="Excedido"]   { background: var(--excedido); color: var(--excedido-t); box-shadow: 0 1px 4px rgba(255,107,43,.3); }
+  .stand.dimmed     { opacity: .15; pointer-events: none; }
+  .stand.highlighted{ box-shadow: 0 0 0 3px var(--accent); transform: scale(1.06); z-index: 5; }
+  .stand.ingresado  { padding-bottom: 15px; }
+  .stand.ingresado::after {
+    content: 'INGRESÓ';
+    position: absolute; left: 0; right: 0; bottom: 0;
+    background: #007aff; color: #fff;
+    font-size: 9px; font-weight: 700; letter-spacing: .4px;
+    text-align: center; padding: 2.5px 0;
+    border-radius: 0 0 8px 8px;
+    pointer-events: none; z-index: 2;
+  }
+
+  /* Pulso al seleccionar un stand */
+  .stand-pulse {
+    position: absolute; inset: -6px; border-radius: 14px; pointer-events: none; z-index: 10;
+    border: 3px solid var(--accent);
+    animation: standPulse 1.1s ease-out forwards;
+  }
+  @keyframes standPulse {
+    0%   { opacity: 1; transform: scale(1); }
+    60%  { opacity: .5; transform: scale(1.18); }
+    100% { opacity: 0; transform: scale(1.35); }
+  }
+  .stand .snum { font-size: 22px; font-weight: 700; line-height: 1; letter-spacing: -.5px; }
+  .stand .srub { font-size: 11px; font-weight: 500; line-height: 1.2; margin-top: 3px; max-width: 100%; word-break: break-word; hyphens: auto; opacity: .78; }
+  .empty { min-width: 136px; min-height: 62px; background: transparent; }
+
+  /* ── BADGES ── */
+  .contrato-badge { position: absolute; top: 2px; right: 4px; font-size: 17px; line-height: 1; z-index: 2; pointer-events: none; }
+  .mob-badge      { position: absolute; top: 2px; left: 4px;  font-size: 17px; line-height: 1; z-index: 2; pointer-events: none; }
+  .com-badge      { position: absolute; bottom: 2px; right: 4px; font-size: 15px; line-height: 1; z-index: 3; pointer-events: none; }
+
+  /* ── LEGEND ── */
+  .legend {
+    padding: 10px 16px; display: flex; gap: 16px; align-items: center;
+    overflow-x: auto; scrollbar-width: none;
+    background: var(--surface); border-top: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .legend::-webkit-scrollbar { display: none; }
+  .leg-item { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text3); font-weight: 500; white-space: nowrap; flex-shrink: 0; }
+  .leg-dot { width: 12px; height: 12px; border-radius: 4px; flex-shrink: 0; }
+
+  /* ── ZOOM ── */
+  .zoom-controls {
+    position: fixed; bottom: 28px; right: 16px; z-index: 150;
+    display: flex; flex-direction: column;
+    background: rgba(255,255,255,.88);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border-radius: 14px; overflow: hidden;
+    box-shadow: var(--shadow-lg); border: 1px solid var(--border);
+  }
+  .zoom-btn {
+    width: 44px; height: 44px; border: none; background: transparent;
+    color: var(--accent); font-size: 22px; font-weight: 500;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    font-family: var(--font); user-select: none; -webkit-tap-highlight-color: transparent;
+    transition: background .1s;
+  }
+  .zoom-btn:active { background: rgba(0,122,255,.1); transform: scale(.92); }
+  .zoom-btn:first-child { border-bottom: 1px solid var(--border); }
+  .zoom-level { text-align: center; font-size: 10px; color: var(--text3); font-weight: 600; padding: 3px 0; border-top: 1px solid var(--border); }
+
+  /* ── MINI-MAPA ── */
+  .minimap {
+    display: none;
+    position: fixed; bottom: 28px; left: 16px; z-index: 150;
+    width: 104px; height: 90px;
+    background: rgba(255,255,255,.9);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border-radius: 12px; border: 1px solid var(--border);
+    box-shadow: var(--shadow-lg);
+    padding: 6px; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
+  .minimap.visible { display: none; }
+  .minimap-dots { position: relative; width: 100%; height: 100%; }
+  .minimap-dot {
+    position: absolute; width: 4px; height: 4px; border-radius: 1px;
+    transform: translate(-50%, -50%); box-sizing: border-box;
+  }
+  .minimap-viewport {
+    position: absolute; top: 0; left: 0;
+    border: 1.5px solid var(--accent); background: rgba(0,122,255,.14);
+    border-radius: 2px; pointer-events: none;
+    min-width: 6px; min-height: 6px;
+  }
+
+  /* ── MODAL ── */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,.45);
+    backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+    z-index: 200; align-items: flex-end; justify-content: center;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--surface); border-radius: 22px 22px 0 0;
+    padding: 18px 20px 40px; width: 100%; max-width: 480px;
+    position: relative; max-height: 90vh; overflow-y: auto;
+    box-shadow: 0 -4px 32px rgba(0,0,0,.14);
+  }
+  .modal.closing { transition: none; animation: slideDown .38s cubic-bezier(.4,0,.6,1) forwards; }
+  @keyframes slideUp   { from{transform:translateY(100%)} to{transform:translateY(0)} }
+  @keyframes slideDown { from{transform:translateY(0)}    to{transform:translateY(105%)} }
+  .modal-handle { width: 36px; height: 4px; background: #d1d1d6; border-radius: 2px; margin: 0 auto 14px; }
+  .modal-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 3px 11px; border-radius: 100px; font-size: 11px; font-weight: 700;
+    margin-bottom: 10px; letter-spacing: .2px;
+  }
+  .modal-badge[data-e="Pagado"]     { background: #d1f5de; color: #0a3d1f; }
+  .modal-badge[data-e="Señado"]     { background: #fff3b0; color: #3d2c00; }
+  .modal-badge[data-e="Disponible"] { background: #eeeeff; color: #3730a3; border: 1.5px solid #5e5ce6; }
+  .modal-badge[data-e="Excedido"]   { background: #ffe4d5; color: #3d1500; }
+  .modal h2     { font-size: 28px; font-weight: 700; letter-spacing: -.5px; color: var(--text); }
+  .modal-nombre-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  .modal-nombre { font-size: 17px; font-weight: 600; color: var(--text); }
+  .modal-nuevo-badge { background: #d1f5de; color: #0a3d1f; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px; letter-spacing: .3px; }
+  .modal-rubro  { font-size: 14px; color: var(--text3); margin-top: 3px; }
+  .modal-zona   { font-size: 11px; color: var(--text3); margin-top: 3px; }
+  .modal-tel {
+    display: inline-flex; align-items: center; gap: 8px;
+    margin-top: 12px; padding: 9px 14px;
+    background: #f0fdf4; border-radius: var(--radius-sm);
+    text-decoration: none; color: #15803d;
+    font-size: 14px; font-weight: 600; border: 1px solid #bbf7d0;
+  }
+  .modal-tel:active { background: #dcfce7; }
+  .modal-money { display: flex; gap: 10px; margin-top: 16px; }
+  .money-box { flex: 1; padding: 10px 14px; border-radius: var(--radius); background: var(--bg); }
+  .money-box .label  { font-size: 10px; color: var(--text3); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+  .money-box .amount { font-size: 17px; font-weight: 700; color: var(--text); margin-top: 2px; }
+  .money-box.debe-ok  { background: #f0fdf4; }
+  .money-box.debe-ok  .amount { color: #15803d; }
+  .money-box.debe-mal { background: #fef2f2; }
+  .money-box.debe-mal .amount { color: #b91c1c; }
+  .modal-close {
+    position: sticky; top: 0; float: right; margin-bottom: -32px;
+    background: var(--bg); border: none; border-radius: 50%;
+    width: 30px; height: 30px; font-size: 16px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text3); font-family: var(--font); z-index: 10;
+  }
+
+  /* ── LOGIN ── */
+  #loginScreen {
+    position: fixed; inset: 0;
+    background: linear-gradient(160deg, #1c1c1e 0%, #2c2c2e 100%);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 999; padding: 24px;
+  }
+  #loginScreen.hidden { display: none; }
+  .login-card {
+    background: rgba(255,255,255,.97); border-radius: 22px; padding: 32px 28px 36px;
+    width: 100%; max-width: 360px; box-shadow: 0 32px 80px rgba(0,0,0,.5);
+  }
+  .login-logo  { font-size: 40px; text-align: center; margin-bottom: 6px; }
+  .login-title { font-size: 20px; font-weight: 700; text-align: center; color: var(--text); letter-spacing: -.3px; }
+  .login-sub   { font-size: 13px; color: var(--text3); text-align: center; margin-bottom: 26px; margin-top: 3px; }
+  .login-label { font-size: 11px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 5px; display: block; }
+  .login-field { margin-bottom: 16px; }
+  .login-select, .login-input {
+    width: 100%; padding: 12px 14px; border: 1.5px solid var(--border);
+    border-radius: var(--radius); font-size: 15px; font-family: var(--font);
+    color: var(--text); outline: none; background: var(--bg);
+    appearance: none; -webkit-appearance: none; transition: border-color .18s;
+  }
+  .login-select:focus, .login-input:focus { border-color: var(--accent); }
+  .select-wrap { position: relative; }
+  .select-wrap::after { content: '▾'; position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--text3); pointer-events: none; font-size: 14px; }
+  .login-btn {
+    width: 100%; padding: 13px; background: var(--accent); color: white;
+    border: none; border-radius: var(--radius); font-size: 15px; font-weight: 600;
+    font-family: var(--font); cursor: pointer; margin-top: 6px; transition: background .18s, transform .1s;
+  }
+  .login-btn:active { background: #0062cc; transform: scale(.98); }
+  .login-btn:disabled { background: #aeaeb2; cursor: not-allowed; }
+  .login-error { color: #ff3b30; font-size: 12px; font-weight: 500; text-align: center; margin-top: 12px; min-height: 16px; }
+  .login-bio-btn {
+    width: 100%; padding: 13px; background: #f2f2f7; color: var(--text);
+    border: 1.5px solid var(--border); border-radius: var(--radius);
+    font-size: 15px; font-weight: 600; font-family: var(--font);
+    cursor: pointer; margin-top: 10px; transition: background .18s, transform .1s;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .login-bio-btn:active { background: #e5e5ea; transform: scale(.98); }
+  .login-bio-sep {
+    display: flex; align-items: center; gap: 10px;
+    margin-top: 14px; color: var(--text3); font-size: 12px;
+  }
+  .login-bio-sep::before, .login-bio-sep::after {
+    content: ''; flex: 1; height: 1px; background: var(--border);
+  }
+  .login-user-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: rgba(255,255,255,.12); border-radius: 100px;
+    padding: 3px 10px 3px 7px; font-size: 11px; color: rgba(255,255,255,.85);
+    cursor: pointer; margin-left: 4px; vertical-align: middle; border: none;
+    font-family: var(--font); font-weight: 500; transition: background .15s;
+  }
+  .login-user-pill:hover { background: rgba(255,255,255,.2); }
+
+  /* ── ASIGNAR FERIANTE ── */
+  .assign-section { margin-top: 16px; padding: 14px 16px; background: #f5f3ff; border: 1.5px solid #a78bfa; border-radius: var(--radius); }
+  .assign-section .assign-title { font-size: 11px; font-weight: 700; color: #5b21b6; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 10px; }
+  .assign-search-wrap { position: relative; margin-bottom: 10px; }
+  .assign-search-input { width: 100%; padding: 10px 36px 10px 12px; border: 1.5px solid #c4b5fd; border-radius: var(--radius-sm); font-size: 14px; font-family: var(--font); color: var(--text); background: white; outline: none; transition: border-color .18s; }
+  .assign-search-input:focus { border-color: #7c3aed; }
+  .assign-search-clear { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; font-size: 18px; color: #7c3aed; cursor: pointer; padding: 0; line-height: 1; display: none; }
+  .assign-dropdown { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: white; border: 1.5px solid #c4b5fd; border-radius: var(--radius-sm); max-height: 200px; overflow-y: auto; z-index: 300; box-shadow: var(--shadow); display: none; }
+  .assign-dropdown.open { display: block; }
+  .assign-dropdown-item { padding: 10px 14px; font-size: 13px; font-family: var(--font); color: var(--text); cursor: pointer; border-bottom: 1px solid #f3f0ff; transition: background .1s; }
+  .assign-dropdown-item:last-child { border-bottom: none; }
+  .assign-dropdown-item:active, .assign-dropdown-item.focused { background: #f5f3ff; color: #5b21b6; }
+  .assign-dropdown-item mark { background: #ede9fe; color: #5b21b6; border-radius: 2px; font-weight: 700; padding: 0 1px; }
+  .assign-dropdown-empty { padding: 12px 14px; font-size: 13px; color: var(--text3); text-align: center; }
+  .assign-selected-pill { display: none; align-items: center; gap: 8px; margin-bottom: 10px; padding: 8px 12px; background: #ede9fe; border-radius: var(--radius-sm); border: 1.5px solid #c4b5fd; }
+  .assign-selected-pill.visible { display: flex; }
+  .assign-selected-pill span { font-size: 13px; font-weight: 600; color: #5b21b6; flex: 1; }
+  .assign-selected-pill button { background: none; border: none; font-size: 18px; color: #7c3aed; cursor: pointer; padding: 0; line-height: 1; }
+  .assign-selected-pill.blacklisted { background: #fef2f2; border-color: #fecaca; }
+  .assign-selected-pill.blacklisted span { color: #b91c1c; }
+  .assign-selected-pill.blacklisted button { color: #dc2626; }
+
+  .assign-blacklist-warning {
+    display: none; align-items: flex-start; gap: 6px;
+    background: #fef2f2; border: 1.5px solid #fecaca; border-radius: var(--radius-sm);
+    padding: 9px 12px; margin-bottom: 10px;
+    font-size: 12px; font-weight: 600; color: #b91c1c; line-height: 1.4;
+  }
+  .assign-blacklist-warning.visible { display: flex; }
+
+  .assign-dropdown-item.blacklisted { background: #fef2f2; }
+  .assign-dropdown-item.blacklisted:active, .assign-dropdown-item.blacklisted.focused { background: #fee2e2; }
+  .assign-dropdown-item .bl-tag {
+    display: inline-flex; align-items: center; gap: 3px;
+    font-size: 10px; font-weight: 700; color: #b91c1c;
+    background: #fee2e2; border-radius: 6px; padding: 1px 6px; margin-left: 6px;
+  }
+  .assign-btn { width: 100%; padding: 10px; background: #7c3aed; color: white; border: none; border-radius: var(--radius-sm); font-size: 14px; font-weight: 600; font-family: var(--font); cursor: pointer; transition: background .18s; }
+  .assign-btn:active { background: #6d28d9; }
+  .assign-btn:disabled { background: #c4b5fd; color: #4c1d95; cursor: not-allowed; }
+  .assign-msg { font-size: 12px; font-weight: 600; text-align: center; margin-top: 8px; min-height: 16px; }
+  .assign-msg.ok  { color: #15803d; }
+  .assign-msg.err { color: #ff3b30; }
+
+  /* ── PAGO INICIAL ── */
+  .assign-pago-sep { height: 1px; background: #c4b5fd; margin: 14px 0 12px; }
+  .assign-pago-title { font-size: 11px; font-weight: 700; color: #5b21b6; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 10px; }
+  .assign-pago-row { display: flex; gap: 8px; margin-bottom: 10px; }
+  .assign-pago-group { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+  .assign-pago-label { font-size: 10px; font-weight: 600; color: #5b21b6; text-transform: uppercase; letter-spacing: .4px; }
+  .assign-pago-input, .assign-pago-select { width: 100%; padding: 9px 12px; border: 1.5px solid #c4b5fd; border-radius: var(--radius-sm); font-size: 13px; font-family: var(--font); color: var(--text); outline: none; background: white; transition: border-color .18s; appearance: none; -webkit-appearance: none; }
+  .assign-pago-input:focus, .assign-pago-select:focus { border-color: #7c3aed; }
+  .assign-pago-select-wrap { position: relative; }
+  .assign-pago-select-wrap::after { content: '▾'; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: #9333ea; pointer-events: none; }
+
+  /* ── MOBILIARIO ── */
+  .mob-panel { display: none; }
+  .mob-panel.active { display: block; }
+  .main-panel { display: block; }
+  .main-panel.hidden { display: none; }
+  .mob-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .mob-back { background: var(--bg); border: none; border-radius: var(--radius-sm); padding: 6px 12px; font-size: 12px; font-weight: 600; font-family: var(--font); color: var(--text2); cursor: pointer; }
+  .mob-back:active { background: #e5e5ea; }
+  .mob-title { font-size: 14px; font-weight: 600; color: var(--text); }
+  .mob-list { display: flex; flex-direction: column; gap: 8px; }
+  .mob-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--bg); border-radius: var(--radius); border: 1px solid var(--border); }
+  .mob-item-name { font-size: 13px; font-weight: 500; color: var(--text); }
+  .mob-counter { display: flex; align-items: center; gap: 10px; }
+  .mob-btn { width: 30px; height: 30px; border-radius: 50%; background: var(--text); color: white; border: none; font-size: 18px; font-weight: 500; font-family: var(--font); cursor: pointer; display: flex; align-items: center; justify-content: center; line-height: 1; transition: transform .1s; }
+  .mob-btn:active { transform: scale(.88); }
+  .mob-btn.minus { background: var(--bg); color: var(--text2); border: 1px solid var(--border); }
+  .mob-btn.minus:active { background: #e5e5ea; }
+  .mob-qty { font-size: 16px; font-weight: 700; color: var(--text); min-width: 20px; text-align: center; }
+  .mob-summary { margin-top: 10px; padding: 8px 12px; background: #e0f2fe; border: 1px solid #bae6fd; border-radius: var(--radius-sm); display: none; }
+  .mob-summary.visible { display: block; }
+  .mob-summary-label { font-size: 10px; font-weight: 700; color: #0369a1; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 4px; }
+  .mob-summary-text { font-size: 12px; font-weight: 600; color: #0c4a6e; line-height: 1.5; }
+  .mob-readonly { margin-top: 12px; padding: 10px 14px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); }
+  .mob-readonly-title { font-size: 10px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: .4px; margin-bottom: 6px; }
+  .mob-readonly-items { display: flex; flex-wrap: wrap; gap: 6px; }
+  .mob-readonly-chip { padding: 3px 10px; background: white; border: 1px solid var(--border); border-radius: 100px; font-size: 12px; font-weight: 500; color: var(--text); }
+
+  /* ── COMENTARIOS (icono en sticky header + panel aparte) ── */
+  .comentarios-icon-btn {
+    position: relative; background: var(--bg); border: none; border-radius: var(--radius-sm);
+    width: 30px; height: 30px; font-size: 15px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .comentarios-icon-btn:active { background: #e5e5ea; }
+  .comentarios-icon-dot {
+    position: absolute; top: 3px; right: 3px; width: 7px; height: 7px;
+    border-radius: 50%; background: var(--accent);
+  }
+  .comentarios-textarea { width: 100%; min-height: 120px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 14px; font-family: var(--font); color: var(--text); background: var(--bg); resize: vertical; }
+  .comentarios-btn { margin-top: 12px; width: 100%; padding: 10px; border: none; border-radius: var(--radius-sm); background: var(--accent); color: white; font-size: 14px; font-weight: 600; font-family: var(--font); cursor: pointer; }
+  .comentarios-btn:disabled { opacity: .5; cursor: default; }
+  .comentarios-msg { margin-top: 8px; font-size: 12px; min-height: 14px; }
+  .comentarios-msg.ok  { color: #1a7f3c; }
+  .comentarios-msg.err { color: #b91c1c; }
+  .mob-open-btn { width: 100%; margin-top: 10px; padding: 9px; background: var(--bg); color: var(--accent); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; font-family: var(--font); cursor: pointer; transition: background .18s; }
+  .mob-open-btn:active { background: #e5e5ea; }
+
+  /* ── MOB ADICIONAL ── */
+  .mob-adicional-section { margin-top: 14px; padding: 14px 16px; background: #f0fdf4; border: 1.5px solid #86efac; border-radius: var(--radius); }
+  .mob-adicional-title { font-size: 11px; font-weight: 700; color: #14532d; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 10px; }
+  .mob-adicional-pago-sep { height: 1px; background: #86efac; margin: 14px 0 12px; }
+  .mob-adicional-pago-title { font-size: 11px; font-weight: 700; color: #14532d; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 10px; }
+  .mob-adicional-row { display: flex; gap: 8px; margin-bottom: 10px; }
+  .mob-adicional-group { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+  .mob-adicional-label { font-size: 10px; font-weight: 600; color: #14532d; text-transform: uppercase; letter-spacing: .4px; }
+  .mob-adicional-input, .mob-adicional-select { width: 100%; padding: 9px 12px; border: 1.5px solid #86efac; border-radius: var(--radius-sm); font-size: 13px; font-family: var(--font); color: var(--text); outline: none; background: white; transition: border-color .18s; appearance: none; -webkit-appearance: none; }
+  .mob-adicional-input:focus, .mob-adicional-select:focus { border-color: #22c55e; }
+  .mob-adicional-select-wrap { position: relative; }
+  .mob-adicional-select-wrap::after { content: '▾'; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: #22c55e; pointer-events: none; }
+  .mob-adicional-open-btn { width: 100%; padding: 9px; background: #15803d; color: #fff; border: none; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; font-family: var(--font); cursor: pointer; transition: background .18s; }
+  .mob-adicional-open-btn:active { background: #166534; }
+  .mob-adicional-summary { margin-top: 8px; padding: 8px 12px; background: #dcfce7; border: 1px solid #86efac; border-radius: var(--radius-sm); display: none; }
+  .mob-adicional-summary.visible { display: block; }
+  .mob-adicional-summary-label { font-size: 10px; font-weight: 700; color: #14532d; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 4px; }
+  .mob-adicional-summary-text { font-size: 12px; font-weight: 600; color: #14532d; line-height: 1.5; }
+  .mob-adicional-total { font-size: 14px; font-weight: 700; color: #15803d; margin-top: 6px; }
+  .mob-adicional-btn { width: 100%; padding: 10px; background: #15803d; color: white; border: none; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; font-family: var(--font); cursor: pointer; transition: background .18s; margin-top: 4px; }
+  .mob-adicional-btn:active { background: #166534; }
+  .mob-adicional-btn:disabled { background: #86efac; color: #14532d; cursor: not-allowed; }
+  .mob-adicional-msg { font-size: 12px; font-weight: 600; text-align: center; margin-top: 8px; min-height: 16px; }
+  .mob-adicional-msg.ok  { color: #15803d; }
+  .mob-adicional-msg.err { color: #ff3b30; }
+
+  /* ── LOADING OVERLAY ── */
+  #loadingOverlay {
+    display: none; position: fixed; inset: 0; z-index: 500;
+    background: rgba(0,0,0,.45); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+    align-items: center; justify-content: center; flex-direction: column; gap: 14px;
+    opacity: 0; transition: opacity .18s ease;
+  }
+  #loadingOverlay.visible { display: flex; }
+  #loadingOverlay.visible.shown { opacity: 1; }
+  .loading-card {
+    background: #fff; border-radius: 18px; padding: 24px 32px;
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    box-shadow: 0 8px 40px rgba(0,0,0,.2); min-width: 180px;
+  }
+  .loading-spinner {
+    width: 36px; height: 36px;
+    border: 3.5px solid #e5e5ea;
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { font-size: 14px; font-weight: 600; color: var(--text2); text-align: center; }
+  .loading-bar-wrap { width: 140px; height: 4px; background: #e5e5ea; border-radius: 2px; overflow: hidden; }
+  .loading-bar { height: 100%; width: 0%; background: var(--accent); border-radius: 2px; transition: width .4s ease; }
+
+  /* ── SUCCESS OVERLAY (check de confirmación, pantalla completa) ── */
+  #successOverlay {
+    display: none; position: fixed; inset: 0; z-index: 600;
+    background: #ffffff;
+    align-items: center; justify-content: center; flex-direction: column; gap: 10px;
+    opacity: 0; transition: opacity .2s ease;
+  }
+  #successOverlay.visible { display: flex; }
+  #successOverlay.visible.shown { opacity: 1; }
+  @keyframes successPopIn { from { transform: scale(.3); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .success-chk-wrap { position: relative; width: 192px; height: 192px; }
+  .success-chk-ring, .success-chk-mid, .success-chk-core { position: absolute; border-radius: 50%; }
+  .success-chk-ring { inset: 0; background: #c8f3d8; animation: successPopIn .45s cubic-bezier(.34,1.56,.64,1) both; }
+  .success-chk-mid  { inset: 24px; background: #7fe0a6; animation: successPopIn .45s cubic-bezier(.34,1.56,.64,1) .05s both; }
+  .success-chk-core {
+    inset: 51px; background: var(--pagado);
+    display: flex; align-items: center; justify-content: center;
+    animation: successPopIn .45s cubic-bezier(.34,1.56,.64,1) .1s both;
+  }
+  .success-title { font-size: 22px; font-weight: 700; color: var(--text); animation: fadeIn .25s ease .12s both; }
+  .success-sub   { font-size: 16px; color: var(--text2); animation: fadeIn .25s ease .16s both; text-align: center; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .success-continue-btn {
+    margin-top: 18px; min-width: 220px;
+    background: var(--pagado); color: #fff; border: none; border-radius: 14px;
+    padding: 14px 40px; font-size: 16px; font-weight: 600; font-family: var(--font);
+    animation: fadeIn .25s ease .2s both;
+    cursor: pointer;
+  }
+  .success-continue-btn:active { transform: scale(.97); }
+
+  /* ── SPINNER INLINE (estado "guardando" dentro de un botón) ── */
+  .btn-spinner {
+    width: 14px; height: 14px; border-radius: 50%;
+    border: 2px solid currentColor; border-right-color: transparent;
+    opacity: .85; display: inline-block; vertical-align: -2.5px; margin-right: 7px;
+    animation: spin .6s linear infinite;
+  }
+
+  /* ── MODAL sticky header ── */
+  .modal-sticky-header {
+    position: sticky; top: 0; z-index: 10;
+    background: var(--surface);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 0 10px; margin-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  .modal-sticky-num {
+    font-size: 18px; font-weight: 700; color: var(--text); letter-spacing: -.3px;
+  }
+  .modal-sticky-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 2px 10px; border-radius: 100px; font-size: 11px; font-weight: 700;
+    letter-spacing: .2px;
+  }
+  .modal-sticky-badge[data-e="Pagado"]     { background: #d1f5de; color: #0a3d1f; }
+  .modal-sticky-badge[data-e="Señado"]     { background: #fff3b0; color: #3d2c00; }
+  .modal-sticky-badge[data-e="Disponible"] { background: #eeeeff; color: #3730a3; border: 1.5px solid #5e5ce6; }
+  .modal-sticky-badge[data-e="Excedido"]   { background: #ffe4d5; color: #3d1500; }
+
+  /* ── MODAL desktop ── */
+  @media (min-width: 640px) {
+    .modal-overlay { align-items: center; }
+    .modal { border-radius: 22px; max-height: 90vh; overflow-y: auto; padding-bottom: 28px; }
+  }
+
+  /* ── ALTA FERIANTE ── */
+  .alta-panel { display: none; }
+  .alta-panel.active { display: block; }
+  .alta-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .alta-back { background: #f5f3ff; border: none; border-radius: var(--radius-sm); padding: 6px 12px; font-size: 12px; font-weight: 600; font-family: var(--font); color: #5b21b6; cursor: pointer; }
+  .alta-back:active { background: #ede9fe; }
+  .alta-title { font-size: 14px; font-weight: 600; color: #5b21b6; }
+  .alta-form { display: flex; flex-direction: column; gap: 10px; }
+  .alta-field { display: flex; flex-direction: column; gap: 4px; }
+  .alta-label { font-size: 10px; font-weight: 700; color: #5b21b6; text-transform: uppercase; letter-spacing: .4px; }
+  .alta-label span.req { color: #ff3b30; margin-left: 2px; }
+  .alta-label span.opt { color: var(--text3); font-weight: 500; text-transform: none; letter-spacing: 0; font-size: 10px; }
+  .alta-input, .alta-select { width: 100%; padding: 10px 12px; border: 1.5px solid #c4b5fd; border-radius: var(--radius-sm); font-size: 13px; font-family: var(--font); color: var(--text); outline: none; background: white; transition: border-color .18s; appearance: none; -webkit-appearance: none; }
+  .alta-input:focus, .alta-select:focus { border-color: #7c3aed; }
+  .alta-select-wrap { position: relative; }
+  .alta-select-wrap::after { content: '▾'; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: #9333ea; pointer-events: none; }
+  .alta-hint { font-size: 11px; color: #7c3aed; margin-top: 2px; }
+  .alta-hint.err-hint { color: #ff3b30; }
+  .alta-btn { width: 100%; padding: 10px; background: #7c3aed; color: white; border: none; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; font-family: var(--font); cursor: pointer; transition: background .18s; margin-top: 4px; }
+  .alta-btn:active { background: #6d28d9; }
+  .alta-btn:disabled { background: #c4b5fd; cursor: not-allowed; }
+  .alta-msg { font-size: 12px; font-weight: 600; text-align: center; margin-top: 6px; min-height: 16px; }
+  .alta-msg.ok  { color: #15803d; }
+  .alta-msg.err { color: #ff3b30; }
+  .assign-alta-btn { width: 100%; margin-top: 8px; padding: 8px; background: white; color: #7c3aed; border: 1.5px dashed #a78bfa; border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; font-family: var(--font); cursor: pointer; transition: all .15s; }
+  .assign-alta-btn:active { background: #f5f3ff; }
+
+  /* ── PAGOS ── */
+  .pagos-section { margin-top: 14px; padding: 14px 16px; background: #fffbeb; border: 1.5px solid #fcd34d; border-radius: var(--radius); }
+  .pagos-title { font-size: 11px; font-weight: 700; color: #92400e; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 12px; }
+  .pagos-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+  .pago-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; background: white; border-radius: var(--radius-sm); border: 1px solid var(--border); }
+  .pago-item.cargado { border-color: #86efac; background: #f0fdf4; }
+  .pago-num { width: 22px; height: 22px; border-radius: 50%; background: #f59e0b; color: white; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .pago-item.cargado .pago-num { background: #22c55e; }
+  .pago-info { flex: 1; min-width: 0; }
+  .pago-estado { font-size: 12px; font-weight: 600; color: var(--text3); }
+  .pago-item.cargado .pago-estado { color: #15803d; }
+  .pago-detalle { font-size: 11px; color: var(--text3); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pago-monto { font-size: 14px; font-weight: 700; color: #15803d; }
+  .pago-form { display: flex; flex-direction: column; gap: 10px; }
+  .pago-form-title { font-size: 12px; font-weight: 700; color: #92400e; }
+  .pago-input-row { display: flex; gap: 8px; }
+  .pago-input-group { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+  .pago-label { font-size: 10px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: .4px; }
+  .pago-input, .pago-select { width: 100%; padding: 9px 12px; border: 1.5px solid #fde68a; border-radius: var(--radius-sm); font-size: 13px; font-family: var(--font); color: var(--text); outline: none; background: white; transition: border-color .18s; appearance: none; -webkit-appearance: none; }
+  .pago-input:focus, .pago-select:focus { border-color: #f59e0b; }
+  .pago-select-wrap { position: relative; }
+  .pago-select-wrap::after { content: '▾'; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: var(--text3); pointer-events: none; }
+  .pago-btn { width: 100%; padding: 10px; background: #f59e0b; color: white; border: none; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; font-family: var(--font); cursor: pointer; transition: background .18s; }
+  .pago-btn:active { background: #d97706; }
+  .pago-btn:disabled { background: #fcd34d; cursor: not-allowed; color: #92400e; }
+  .pago-msg { font-size: 12px; font-weight: 600; text-align: center; min-height: 16px; }
+  .pago-msg.ok  { color: #15803d; }
+  .pago-msg.err { color: #ff3b30; }
+
+  /* ── TOAST ── */
+  #toastContainer {
+    position: fixed; bottom: 92px; left: 50%; transform: translateX(-50%);
+    z-index: 400; display: flex; flex-direction: column; align-items: center;
+    gap: 8px; pointer-events: none;
+  }
+  .toast {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 11px 20px; border-radius: 100px;
+    font-size: 14px; font-weight: 600; font-family: var(--font);
+    white-space: nowrap; max-width: 88vw;
+    box-shadow: 0 4px 24px rgba(0,0,0,.22);
+    animation: toastIn .3s cubic-bezier(.34,1.56,.64,1) both;
+    pointer-events: auto;
+  }
+  .toast.ok  { background: #1c1c1e; color: #ffffff; }
+  .toast.err { background: #ff3b30; color: #ffffff; }
+  .toast.out { animation: toastOut .22s ease forwards; }
+  @keyframes toastIn  { from { opacity: 0; transform: translateY(14px) scale(.94); } to { opacity: 1; transform: translateY(0) scale(1); } }
+  @keyframes toastOut { from { opacity: 1; transform: translateY(0) scale(1); }      to { opacity: 0; transform: translateY(8px) scale(.97); } }
+
+  /* ── ACORDEÓN (secciones colapsables del modal) ── */
+  .acc-header {
+    display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent;
+  }
+  .acc-header-left { display: flex; align-items: center; gap: 6px; }
+  .acc-summary { font-size: 11px; font-weight: 600; opacity: .75; text-transform: none; letter-spacing: 0; }
+  .acc-chevron { font-size: 12px; transition: transform .2s ease; flex-shrink: 0; }
+  .acc-header.open .acc-chevron { transform: rotate(180deg); }
+  .acc-body { display: none; overflow: hidden; }
+  .acc-body.open { display: block; animation: accOpen .18s ease; }
+  @keyframes accOpen { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+</style>
+</head>
+<body>
+
+<!-- ── PANTALLA DE LOGIN ── -->
+<div id="loginScreen">
+  <div class="login-card">
+    <div class="login-logo"><img src="https://raw.githubusercontent.com/agazzane/Mapa-Feria-Septiembre/main/SUCOVI.jpg" style="width:64px;height:64px;border-radius:16px;object-fit:cover;"></div>
+    <div class="login-title">Feria Septiembre 2026</div>
+    <div class="login-sub">Mapa de Stands · <span id="loginVersion"></span></div>
+
+    <div class="login-field">
+      <label class="login-label" for="loginUser">Usuario</label>
+      <div class="select-wrap">
+        <select id="loginUser" class="login-select">
+          <option value="">Cargando usuarios...</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="login-field">
+      <label class="login-label" for="loginPass">Contraseña</label>
+      <input id="loginPass" type="password" class="login-input" placeholder="Ingresá tu contraseña"
+        onkeydown="if(event.key==='Enter') doLogin()">
+    </div>
+
+    <button class="login-btn" id="loginBtn" onclick="doLogin()">Ingresar</button>
+    <div id="bioBtnWrap" style="display:none">
+      <div class="login-bio-sep">o</div>
+      <button class="login-bio-btn" id="bioBtn" onclick="loginConBiometrico()">
+        <span style="font-size:20px">🪪</span> Entrar sin contraseña
+      </button>
+    </div>
+    <div class="login-error" id="loginError"></div>
+  </div>
+</div>
+
+<header>
+  <div class="header-row-top">
+    <img src="https://raw.githubusercontent.com/agazzane/Mapa-Feria-Septiembre/main/SUCOVI.jpg" class="header-logo-sq" style="object-fit:cover;">
+    <div class="header-title-block">
+      <h1>Feria Septiembre 2026 <span id="headerVersion"></span></h1>
+      <p id="subtitle">Sincronizando datos...</p>
+    </div>
+    <button class="login-user-pill" id="userPill" onclick="cerrarSesion()" style="display:none">
+      <span class="user-pill-avatar" id="userPillAvatar">?</span>
+      <span id="userPillName"></span>
+    </button>
+  </div>
+</header>
+
+<!-- ── BARRA DE OCUPACIÓN (una sola línea) ── -->
+<div class="occ-bar-wrap" id="occBarWrap">
+  <div class="occ-bar-row">
+    <span class="occ-bar-pct" id="occPct">—</span>
+    <div class="occ-bar-track" id="occTrack">
+      <div class="occ-bar-seg" id="occSegPagado" style="width:0%"></div>
+      <div class="occ-bar-seg" id="occSegSenado" style="width:0%"></div>
+      <div class="occ-bar-seg" id="occSegDisp"   style="width:0%"></div>
+    </div>
+    <div class="occ-chips" id="occDetail">
+      <span class="occ-chip occ-chip-pagado" id="occValPagado">—</span>
+      <span class="occ-chip occ-chip-senado" id="occValSenado">—</span>
+      <span class="occ-chip occ-chip-libre"  id="occValDisp">—</span>
+    </div>
+  </div>
+</div>
+
+<div class="stats" id="statsBar" style="display:none"></div>
+
+<div class="tabs">
+  <button class="tab-btn active" onclick="switchFloor('pb', this)">🏠 Planta Baja</button>
+  <button class="tab-btn"        onclick="switchFloor('pa', this)">🏢 Planta Alta</button>
+</div>
+
+<!-- ── BUSCADOR + FILTROS (una sola línea) ── -->
+<div class="search-filters-row">
+  <div class="search-wrap-compact">
+    <span class="search-icon">🔍</span>
+    <input type="search" id="searchInput" placeholder="Buscar..." oninput="applyFilters()">
+  </div>
+  <div class="filters" id="filterBar">
+    <button class="filter-btn" id="filtroMobBtn"  onclick="toggleFiltro('mobiliario', this)">🪑 Con mobiliario</button>
+    <button class="filter-btn" id="filtroDispBtn" onclick="toggleFiltro('disponible', this)">🔓 Disponible</button>
+  </div>
+</div>
+
+<div class="floor active" id="floor-pb">
+  <div class="map-scroll"><div class="map-inner"><div class="map-zoom">
+    <svg class="map-bg" width="2050" height="1900" xmlns="http://www.w3.org/2000/svg">
+      <defs><style>.bg-label{font-family:'DM Sans',sans-serif;font-weight:700;}</style></defs>
+      <rect x="140" y="0" width="2050" height="290" fill="#bfdbfe" rx="6"/>
+      <rect x="0" y="70" width="138" height="400" fill="#60a5fa" rx="6"/>
+      <text class="bg-label" x="230" y="270" text-anchor="middle" fill="white" font-size="18" transform="rotate(-90,69,70)">ESCENARIO</text>
+      <rect x="0" y="0" width="138" height="196" fill="#cbd5e1" rx="4"/>
+      <text class="bg-label" x="69" y="100" text-anchor="middle" fill="#475569" font-size="15">ACCESO</text>
+      <text class="bg-label" x="69" y="116" text-anchor="middle" fill="#475569" font-size="15">PLANTA ALTA</text>
+      <text class="bg-label" x="69" y="132" text-anchor="middle" fill="#475569" font-size="13">(escalera)</text>
+      <text class="bg-label" x="1050" y="140" text-anchor="middle" fill="#1e3a5f" font-size="28">PATIO CUBIERTO</text>
+      <rect x="138" y="290" width="2050" height="1380" fill="#f0c8d8" rx="4"/>
+      <text class="bg-label" x="1120" y="700" text-anchor="middle" fill="#1e3a5f" font-size="28">PATIO</text>
+      <text class="bg-label" x="1120" y="750" text-anchor="middle" fill="#1e3a5f" font-size="28">DESCUBIERTO</text>
+      <rect x="0" y="196" width="138" height="1500" fill="#d4a0b5" rx="4"/>
+      <rect x="0" y="1550" width="138" height="130" fill="#cbd5e1" rx="4"/>
+      <text class="bg-label" x="69" y="1600" text-anchor="middle" fill="#475569" font-size="15">ACCESO</text>
+      <text class="bg-label" x="69" y="1616" text-anchor="middle" fill="#475569" font-size="15">PLANTA ALTA</text>
+      <text class="bg-label" x="69" y="1632" text-anchor="middle" fill="#475569" font-size="13">(escalera)</text>
+      <rect x="850" y="1220" width="1200" height="800" fill="#cbd5e1" rx="6"/>
+      <text class="bg-label" x="1450" y="1600" text-anchor="middle" fill="#475569" font-size="34">DEPÓSITO</text>
+      <text class="bg-label" x="1450" y="1644" text-anchor="middle" fill="#475569" font-size="34">ZONA TÉCNICA</text>
+      <rect x="0" y="1670" width="620" height="300" fill="#bbf7d0" rx="4"/>
+      <rect x="1610" y="510" width="180" height="80" fill="#475569" rx="5"/><text class="bg-label" x="1705" y="560" text-anchor="middle" fill="white" font-size="28">MESA</text>
+      <rect x="1610" y="630" width="180" height="80" fill="#475569" rx="5"/><text class="bg-label" x="1705" y="680" text-anchor="middle" fill="white" font-size="28">MESA</text>
+      <rect x="1610" y="750" width="180" height="80" fill="#475569" rx="5"/><text class="bg-label" x="1705" y="800" text-anchor="middle" fill="white" font-size="28">MESA</text>
+      <rect x="1610" y="870" width="180" height="80" fill="#475569" rx="5"/><text class="bg-label" x="1705" y="920" text-anchor="middle" fill="white" font-size="28">MESA</text>
+      <rect x="1860" y="610" width="185" height="200" fill="#1e3a5f" rx="5"/><text class="bg-label" x="1950" y="720" text-anchor="middle" fill="white" font-size="28">ESCENARIO</text>
+      <rect x="1920" y="320" width="130" height="100" fill="#1e3a5f" rx="5"/><text class="bg-label" x="1980" y="380" text-anchor="middle" fill="white" font-size="28">DJ</text>
+      <rect x="1880" y="880" width="165" height="80" fill="#64748b" rx="5"/><text class="bg-label" x="1960" y="930" text-anchor="middle" fill="white" font-size="24">CAJAS</text>
+      <rect x="1800" y="980" width="300" height="240" fill="#1e3a5f" rx="5"/>
+      <text class="bg-label" x="1920" y="1080" text-anchor="middle" fill="white" font-size="24">STAND</text>
+      <text class="bg-label" x="1920" y="1130" text-anchor="middle" fill="white" font-size="24">VENTAS</text>
+      <text class="bg-label" x="1870" y="320" text-anchor="middle" fill="#1e3a5f" font-size="18">INGRESO</text>
+      <text class="bg-label" x="350"  y="320" text-anchor="middle" fill="#1e3a5f" font-size="18">INGRESO</text>
+      <text class="bg-label" x="1190" y="320" text-anchor="middle" fill="#1e3a5f" font-size="18">INGRESO</text>
+      <text class="bg-label" x="740"  y="1660" text-anchor="middle" fill="#1e3a5f" font-size="18">INGRESO</text>
+      <text class="bg-label" x="740"  y="1890" text-anchor="middle" fill="#065f46" font-size="24">ENTRADA</text>
+      <text x="740" y="1750" text-anchor="middle" fill="#065f46" font-size="40">↕</text>
+    </svg>
+    <div class="grid" id="grid-pb"></div>
+  </div></div></div>
+</div>
+
+<div class="floor" id="floor-pa">
+  <div class="map-scroll"><div class="map-inner"><div class="map-zoom">
+    <svg class="map-bg" width="1900" height="1590" xmlns="http://www.w3.org/2000/svg">
+      <defs><style>.bg-label{font-family:'DM Sans',sans-serif;font-weight:700;}</style></defs>
+      <rect x="0" y="0" width="1900" height="1590" fill="#666666" rx="6"/>
+      <rect x="100" y="0" width="135" height="300" fill="#bfdbfe" rx="6"/>
+      <text class="bg-label" x="110" y="800" text-anchor="middle" fill="#1e3a5f" font-size="28">SEMICUBIERTO</text>
+      <rect x="0" y="0" width="250" height="1350" fill="#bfdbfe" rx="4"/>
+      <text class="bg-label" x="210" y="800" text-anchor="middle" fill="#1e3a5f" font-size="40" transform="rotate(-90,200,800)">SEMICUBIERTO</text>
+      <rect x="250" y="170" width="1200" height="180" fill="#e0f2fe" rx="4"/>
+      <text class="bg-label" x="800" y="320" text-anchor="middle" fill="#1e3a5f" font-size="28">GALERIA ANCHA</text>
+      <text x="1400" y="320" text-anchor="middle" fill="#1e3a5f" font-size="60">⇔</text>
+      <text x="310"  y="320" text-anchor="middle" fill="#1e3a5f" font-size="60">⇔</text>
+      <rect x="250" y="1130" width="730" height="460" fill="#c4b5fd" rx="4"/>
+      <text class="bg-label" x="650" y="1350" text-anchor="middle" fill="#3b0764" font-size="30">PRIMER NIVEL</text>
+      <text class="bg-label" x="650" y="1400" text-anchor="middle" fill="#3b0764" font-size="30">COMEDOR</text>
+      <text x="930" y="1330" text-anchor="middle" fill="#3b0764" font-size="60">⇔</text>
+      <text x="930" y="1540" text-anchor="middle" fill="#3b0764" font-size="60">⇔</text>
+      <text x="320" y="1360" text-anchor="middle" fill="#3b0764" font-size="60">⇔</text>
+      <rect x="980" y="1130" width="700" height="460" fill="#9478eb" rx="4"/>
+      <text class="bg-label" x="1330" y="1520" text-anchor="middle" fill="#3b0764" font-size="30">SEGUNDO NIVEL</text>
+      <text class="bg-label" x="1330" y="1570" text-anchor="middle" fill="#3b0764" font-size="30">COMEDOR</text>
+      <rect x="1450" y="0" width="460" height="350" fill="#a78bfa" rx="4"/>
+      <text class="bg-label" x="1600" y="290" text-anchor="middle" fill="#3b0764" font-size="28">PATIO</text>
+      <text class="bg-label" x="1600" y="330" text-anchor="middle" fill="#3b0764" font-size="28">DESCUBIERTO</text>
+      <rect x="0" y="0" width="250" height="170" fill="#cbd5e1" rx="4"/>
+      <text class="bg-label" x="120" y="60"  text-anchor="middle" fill="#475569" font-size="18">ACCESO</text>
+      <text class="bg-label" x="120" y="80"  text-anchor="middle" fill="#475569" font-size="18">PTA. BAJA</text>
+      <text class="bg-label" x="120" y="100" text-anchor="middle" fill="#475569" font-size="16">(escalera)</text>
+      <rect x="0" y="1350" width="250" height="240" fill="#cbd5e1" rx="4"/>
+      <text class="bg-label" x="120" y="1450" text-anchor="middle" fill="#475569" font-size="18">ACCESO</text>
+      <text class="bg-label" x="120" y="1480" text-anchor="middle" fill="#475569" font-size="18">PTA. BAJA</text>
+      <text class="bg-label" x="120" y="1510" text-anchor="middle" fill="#475569" font-size="16">(escalera)</text>
+      <text x="50" y="730" text-anchor="middle" fill="#475569" font-size="22">⇔</text>
+    </svg>
+    <div class="grid" id="grid-pa"></div>
+  </div></div></div>
+</div>
+
+<div class="legend">
+  <div class="leg-item"><div class="leg-dot" style="background:var(--pagado)"></div> Pagado</div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--senado)"></div> Señado</div>
+  <div class="leg-item"><div class="leg-dot" style="background:var(--disp);border:2px solid #9333ea"></div> Disponible</div>
+  <div class="leg-item"><span style="display:inline-block;width:22px;height:9px;background:#007aff;border-radius:3px;color:#fff;font-size:7px;font-weight:700;text-align:center;line-height:9px;letter-spacing:.2px">ING</span> Ingresó a la feria</div>
+  <div class="leg-item"><span style="font-size:15px;line-height:1">✍️</span> Contrato firmado</div>
+  <div class="leg-item"><span style="font-size:15px;line-height:1">🪑</span> Tiene mobiliario</div>
+  <div class="leg-item"><span style="font-size:15px;line-height:1">📝</span> Tiene comentario</div>
+</div>
+
+<div class="zoom-controls">
+  <button class="zoom-btn" onclick="cambiarZoom(1)">+</button>
+  <div class="zoom-level" id="zoomLabel">60%</div>
+  <button class="zoom-btn" onclick="cambiarZoom(-1)">−</button>
+</div>
+
+<div class="minimap" id="minimap" onclick="minimapJump(event)" title="Tocá para saltar a esa zona del mapa">
+  <div class="minimap-dots" id="minimapDots"></div>
+  <div class="minimap-viewport" id="minimapViewport"></div>
+</div>
+
+<!-- TOAST CONTAINER -->
+<div id="toastContainer"></div>
+
+<!-- LOADING OVERLAY -->
+<div id="loadingOverlay">
+  <div class="loading-card">
+    <div class="loading-spinner"></div>
+    <div class="loading-text" id="loadingText">Guardando...</div>
+    <div class="loading-bar-wrap"><div class="loading-bar" id="loadingBar"></div></div>
+  </div>
+</div>
+
+<!-- SUCCESS OVERLAY -->
+<div id="successOverlay">
+  <div class="success-chk-wrap">
+    <div class="success-chk-ring"></div>
+    <div class="success-chk-mid"></div>
+    <div class="success-chk-core">
+      <svg width="66" height="66" viewBox="0 0 24 24" fill="none"><path d="M4 12.5l5 5L20 6" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+  </div>
+  <div class="success-title" id="successTitle">Stand cargado</div>
+  <div class="success-sub" id="successSub"></div>
+  <button class="success-continue-btn" id="successContinueBtn">Continuar</button>
+</div>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+
+    <!-- Sticky header: número + badge siempre visibles al scrollear -->
+    <div class="modal-sticky-header" id="modalStickyHeader">
+      <span class="modal-sticky-num" id="modalStickyNum">Stand —</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="modal-sticky-badge" id="modalStickyBadge" data-e=""></span>
+        <button class="comentarios-icon-btn" id="comentariosIconBtn" onclick="openComentariosPanel()" style="display:none" title="Comentarios">
+          📝<span class="comentarios-icon-dot" id="comentariosIconDot" style="display:none"></span>
+        </button>
+        <button class="modal-close" style="position:static;float:none;margin:0" onclick="closeModal()">×</button>
+      </div>
+    </div>
+
+    <!-- Panel principal -->
+    <div class="main-panel" id="mainPanel">
+    <div class="modal-nombre-row">
+      <span class="modal-nombre" id="modalNombre"></span>
+      <span class="modal-nuevo-badge" id="modalNuevoBadge" style="display:none">NUEVO</span>
+    </div>
+    <div class="modal-rubro"  id="modalRubro"></div>
+    <div class="modal-zona"   id="modalZona"></div>
+    <!-- WHATSAPP -->
+    <a id="modalTel" class="modal-tel" href="#" target="_blank" style="display:none">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="#25d366">
+        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+      </svg>
+      <span id="modalTelText"></span>
+    </a>
+    <div class="modal-money" id="modalMoney" style="display:none">
+      <div class="money-box">
+        <div class="label">Total</div>
+        <div class="amount" id="modalTotal"></div>
+      </div>
+      <div class="money-box" id="modalDebeBox">
+        <div class="label">Debe</div>
+        <div class="amount" id="modalDebe"></div>
+      </div>
+    </div>
+
+    <!-- ASIGNAR FERIANTE (solo cuando el stand está Disponible) -->
+    <div class="assign-section" id="assignSection" style="display:none">
+      <div class="assign-title">🔓 Asignar Feriante</div>
+      <!-- Pill del feriante seleccionado -->
+      <div class="assign-selected-pill" id="assignPill">
+        <span id="assignPillName"></span>
+        <button onclick="clearAssignSelection()" title="Quitar selección">×</button>
+      </div>
+      <!-- Warning: feriante en Lista Negra -->
+      <div class="assign-blacklist-warning" id="assignBlacklistWarning">
+        ⚠️ Este feriante figura en la <strong>Lista Negra</strong>. Verificá antes de continuar con la venta.
+      </div>
+      <!-- Campo de búsqueda -->
+      <div class="assign-search-wrap" id="assignSearchWrap">
+        <input type="text" class="assign-search-input" id="assignSearch"
+          placeholder="Buscar feriante por nombre..."
+          autocomplete="off" autocorrect="off" spellcheck="false"
+          oninput="filterFeriantes()" onfocus="filterFeriantes()"
+          onblur="setTimeout(()=>document.getElementById('assignDropdown').classList.remove('open'),150)">
+        <button class="assign-search-clear" id="assignSearchClear" onclick="clearAssignSearch()">×</button>
+        <div class="assign-dropdown" id="assignDropdown"></div>
+      </div>
+      <!-- Botón dar de alta nuevo feriante -->
+      <button class="assign-alta-btn" onclick="openAltaPanel()">➕ No lo encuentro — Dar de alta nuevo feriante</button>
+
+      <!-- Botón mobiliario y resumen -->
+      <button class="mob-open-btn" onclick="openMobPanel()">🪑 Agregar mobiliario <span id="mobBtnLabel"></span></button>
+      <div class="mob-summary" id="mobSummary">
+        <div class="mob-summary-label">Mobiliario seleccionado</div>
+        <div class="mob-summary-text" id="mobSummaryText"></div>
+      </div>
+
+      <!-- Seña inicial (obligatoria) -->
+      <div class="assign-pago-sep"></div>
+      <div class="assign-pago-title">💳 Seña inicial (obligatoria)</div>
+      <div class="assign-pago-row">
+        <div class="assign-pago-group">
+          <label class="assign-pago-label">Monto ($)</label>
+          <input type="number" class="assign-pago-input" id="assignMonto"
+            placeholder="0" min="1" oninput="checkAssignBtn()">
+        </div>
+        <div class="assign-pago-group">
+          <label class="assign-pago-label">Medio de pago</label>
+          <div class="assign-pago-select-wrap">
+            <select class="assign-pago-select" id="assignMedio" onchange="checkAssignBtn()">
+              <option value="">Cargando...</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <button class="assign-btn" id="assignBtn" onclick="asignarFeriante()" disabled>Asignar y señar</button>
+      <!-- Combo vendedor seña: solo visible para Admin (3) -->
+      <div class="assign-pago-group" id="assignVendedorGroup" style="display:none;margin-top:4px">
+        <label class="assign-pago-label">Registrar en nombre de</label>
+        <div class="assign-pago-select-wrap">
+          <select class="assign-pago-select" id="assignVendedor">
+            <option value="">— Elegí vendedor —</option>
+          </select>
+        </div>
+      </div>
+      <div class="assign-msg" id="assignMsg"></div>
+    </div>
+
+    <!-- Mobiliario asignado: solo lectura para Señado/Pagado -->
+    <div class="mob-readonly" id="mobReadonly" style="display:none">
+      <div class="mob-readonly-title">🪑 Mobiliario</div>
+      <div class="mob-readonly-items" id="mobReadonlyItems"></div>
+    </div>
+
+    <!-- PAGOS: historial colapsable (Pagado) / formulario para cargar el próximo pago (Señado) -->
+    <div class="pagos-section" id="pagosSection" style="display:none">
+      <div class="pagos-title acc-header" id="pagosHeader" onclick="toggleAcc('pagosHeader','pagosBody')">
+        <span class="acc-header-left">💳 Pagos</span>
+        <span class="acc-chevron">▾</span>
+      </div>
+      <div class="acc-body" id="pagosBody">
+        <div class="pagos-list" id="pagosList"></div>
+        <div class="pago-form" id="pagoForm" style="display:none">
+          <div class="pago-form-title" id="pagoFormTitle">Cargar Pago 1</div>
+          <div class="pago-input-row">
+            <div class="pago-input-group">
+              <label class="pago-label">Monto ($)</label>
+              <input type="number" class="pago-input" id="pagoMonto" placeholder="0" min="1">
+            </div>
+            <div class="pago-input-group">
+              <label class="pago-label">Medio de pago</label>
+              <div class="pago-select-wrap">
+                <select class="pago-select" id="pagoMedio">
+                  <option value="">Cargando...</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <!-- Combo vendedor: solo visible para perfil Admin (3) -->
+          <div class="pago-input-group" id="pagoVendedorGroup" style="display:none;margin-top:4px">
+            <label class="pago-label">Registrar en nombre de</label>
+            <div class="pago-select-wrap">
+              <select class="pago-select" id="pagoVendedor">
+                <option value="">— Elegí vendedor —</option>
+              </select>
+            </div>
+          </div>
+          <button class="pago-btn" id="pagoBtn" onclick="cargarPago()">Registrar pago</button>
+          <div class="pago-msg" id="pagoMsg"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- VENTA MOB ADICIONAL (solo stands Pagados, perfil 1) -->
+    <div class="mob-adicional-section" id="mobAdicionalSection" style="display:none">
+      <div class="mob-adicional-title acc-header" id="mobAdicionalHeader" onclick="toggleAcc('mobAdicionalHeader','mobAdicionalBody')">
+        <span class="acc-header-left">🪑➕ Vender Mobiliario Adicional</span>
+        <span class="acc-chevron">▾</span>
+      </div>
+      <div class="acc-body" id="mobAdicionalBody">
+      <button class="mob-adicional-open-btn" onclick="openMobAdicionalPanel()">🪑 Seleccionar mobiliario <span id="mobAdicionalBtnLabel"></span></button>
+      <div class="mob-adicional-summary" id="mobAdicionalSummary">
+        <div class="mob-adicional-summary-label">Mobiliario seleccionado</div>
+        <div class="mob-adicional-summary-text" id="mobAdicionalSummaryText"></div>
+        <div class="mob-adicional-total" id="mobAdicionalTotal"></div>
+      </div>
+      <div class="mob-adicional-pago-sep"></div>
+      <div class="mob-adicional-pago-title">💳 Pago (monto exacto obligatorio)</div>
+      <div class="mob-adicional-row">
+        <div class="mob-adicional-group">
+          <label class="mob-adicional-label">Monto ($)</label>
+          <input type="number" class="mob-adicional-input" id="mobAdicionalMonto"
+            placeholder="—" min="1" readonly style="background:#f0fdf4;color:#15803d;font-weight:700;cursor:default">
+        </div>
+        <div class="mob-adicional-group">
+          <label class="mob-adicional-label">Medio de pago</label>
+          <div class="mob-adicional-select-wrap">
+            <select class="mob-adicional-select" id="mobAdicionalMedio" onchange="checkMobAdicionalBtn()">
+              <option value="">Cargando...</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <button class="mob-adicional-btn" id="mobAdicionalBtn" onclick="venderMobAdicional()" disabled>Registrar venta de mobiliario</button>
+      <div class="mob-adicional-msg" id="mobAdicionalMsg"></div>
+      </div>
+    </div>
+
+    <!-- COMENTARIOS (texto libre, solo perfil 1 y 3, no en Disponible) -->
+    </div><!-- /.main-panel -->
+    <div class="mob-panel" id="comentariosPanel">
+      <div class="mob-header">
+        <button class="mob-back" onclick="closeComentariosPanel()">← Volver</button>
+        <div class="mob-title">📝 Comentarios</div>
+      </div>
+      <textarea class="comentarios-textarea" id="comentariosTexto" placeholder="Escribí un comentario para este stand..." maxlength="500" oninput="checkComentariosBtn()"></textarea>
+      <button class="comentarios-btn" id="comentariosBtn" onclick="guardarComentario()" disabled>Guardar comentario</button>
+      <div class="comentarios-msg" id="comentariosMsg"></div>
+    </div>
+
+    <!-- Panel de mobiliario (reemplaza al main-panel al abrirse) -->
+    <div class="mob-panel" id="mobPanel">
+      <div class="mob-header">
+        <button class="mob-back" onclick="closeMobPanel()">← Volver</button>
+        <div class="mob-title">🪑 Mobiliario</div>
+      </div>
+      <div class="mob-list" id="mobList"></div>
+      <button class="assign-btn" style="margin-top:14px;background:#0369a1;border:none" onclick="closeMobPanel()">Confirmar selección</button>
+    </div>
+
+    <!-- Panel de selección de mob adicional -->
+    <div class="mob-panel" id="mobAdicionalPanel">
+      <div class="mob-header">
+        <button class="mob-back" onclick="closeMobAdicionalPanel()">← Volver</button>
+        <div class="mob-title">🪑➕ Mob. Adicional</div>
+      </div>
+      <div class="mob-list" id="mobAdicionalList"></div>
+      <button class="assign-btn" style="margin-top:14px;background:#15803d;border:none" onclick="closeMobAdicionalPanel()">Confirmar selección</button>
+    </div>
+
+    <!-- Panel de alta de nuevo feriante -->
+    <div class="alta-panel" id="altaPanel">
+      <div class="alta-header">
+        <button class="alta-back" onclick="closeAltaPanel()">← Volver</button>
+        <div class="alta-title">➕ Nuevo Feriante</div>
+      </div>
+      <div class="alta-form">
+        <div class="alta-field">
+          <label class="alta-label">Nombre y Apellido <span class="req">*</span></label>
+          <input type="text" class="alta-input" id="altaNombre" placeholder="Ej: María González" autocomplete="off">
+        </div>
+        <div class="alta-field">
+          <label class="alta-label">Tipo <span class="req">*</span></label>
+          <div class="alta-select-wrap">
+            <select class="alta-select" id="altaTipo">
+              <option value="">— Seleccioná —</option>
+              <option value="Emprend">Emprend</option>
+              <option value="Moda circ">Moda circ</option>
+            </select>
+          </div>
+        </div>
+        <div class="alta-field">
+          <label class="alta-label">Rubro <span class="req">*</span></label>
+          <input type="text" class="alta-input" id="altaRubro" placeholder="Ej: Ropa infantil" maxlength="60" autocomplete="off">
+          <div class="alta-hint" id="altaRubroHint">Máximo 60 caracteres</div>
+        </div>
+        <div class="alta-field">
+          <label class="alta-label">Celular <span class="req">*</span></label>
+          <input type="tel" class="alta-input" id="altaCelular" placeholder="1158585858" autocomplete="off" inputmode="numeric">
+          <div class="alta-hint">Sin 0, sin 15, sin espacios. Ej: 1158585858</div>
+        </div>
+        <div class="alta-field">
+          <label class="alta-label">Email <span class="opt">(opcional)</span></label>
+          <input type="email" class="alta-input" id="altaEmail" placeholder="mail@ejemplo.com" autocomplete="off" inputmode="email">
+        </div>
+        <div class="alta-field">
+          <label class="alta-label">Instagram <span class="opt">(opcional)</span></label>
+          <input type="text" class="alta-input" id="altaIG" placeholder="@usuario" autocomplete="off">
+        </div>
+        <div class="alta-field">
+          <label class="alta-label">DNI <span class="opt">(opcional)</span></label>
+          <input type="text" class="alta-input" id="altaDNI" placeholder="Ej: 30123456" autocomplete="off" inputmode="numeric">
+        </div>
+        <button class="alta-btn" id="altaBtn" onclick="guardarNuevoFeriante()">Guardar feriante</button>
+        <div class="alta-msg" id="altaMsg"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// Bloquear zoom nativo del browser solo fuera del mapa (el mapa tiene su propio pinch-to-zoom)
+document.addEventListener('touchstart', e => {
+  if (e.touches.length > 1) {
+    const el = document.elementFromPoint(e.touches[0].clientX, e.touches[0].clientY);
+    const enMapa = el && (el.closest('.map-scroll') || el.closest('.map-inner'));
+    if (!enMapa) e.preventDefault();
+  }
+}, {passive:false});
+document.addEventListener('touchmove', e => {
+  if (e.touches.length > 1) {
+    const el = document.elementFromPoint(e.touches[0].clientX, e.touches[0].clientY);
+    const enMapa = el && (el.closest('.map-scroll') || el.closest('.map-inner'));
+    if (!enMapa) e.preventDefault();
+  }
+}, {passive:false});
+let lastTap = 0;
+document.addEventListener('touchend', e => { const now=Date.now(); if(now-lastTap<300) e.preventDefault(); lastTap=now; }, {passive:false});
+
+// ── VERSIÓN DE LA APP ────────────────────────────────────────────────────────
+const APP_VERSION = 'v1.6';   // ← cambiá solo acá
+document.addEventListener('DOMContentLoaded', () => {
+  const lv = document.getElementById('loginVersion');
+  const hv = document.getElementById('headerVersion');
+  if (lv) lv.textContent = APP_VERSION;
+  if (hv) hv.textContent = APP_VERSION;
+});
+
+const API_URL = "https://script.google.com/macros/s/AKfycbw1KPZO2gNyjKoj8GDdoG6QafGNt4EHbzugcqf66eNAt9hyLmw671EBtLZpRtmVX3VHNw/exec";
+
+let FULL_DATA = {}, currentFloor = 'pb';
+let FERIANTES_LIST = [];
+let LISTA_NEGRA = [];      // nombres normalizados (sin tildes, minúsculas, sin espacios extra)
+let VENDEDORES_LIST = [];  // solo usuarios con perfil 1, para el Admin
+let currentStandId = null;
+let soloMisVentas  = false;
+let PRECIOS_MOB    = {};   // { 'Mesa': 1500, 'Pupitre Doble': 2000, ... }
+
+// Normaliza nombres para comparar sin importar mayúsculas, tildes o espacios extra
+function normalizarNombre(s) {
+  return String(s || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // saca tildes
+    .toLowerCase()
+    .trim().replace(/\s+/g, ' ');
+}
+function estaEnListaNegra(nombre) {
+  return LISTA_NEGRA.includes(normalizarNombre(nombre));
+}
+
+// Redibuja el mapa (grillas, stats, minimapa) a partir de FULL_DATA ya en
+// memoria, sin pedir nada al servidor. Se usa tanto al final de load() como
+// cuando una acción puntual (asignar, mobiliario adicional) ya actualizó
+// FULL_DATA localmente y solo hace falta refrescar la pantalla.
+function renderMapUI() {
+  buildGrid('grid-pb', FULL_DATA.pbData);
+  buildGrid('grid-pa', FULL_DATA.paData);
+  buildStats();
+  const total = Object.keys(FULL_DATA.pbData).length + Object.keys(FULL_DATA.paData).length;
+  const horaActualizacion = new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+  document.getElementById('subtitle').textContent = `${total} stands · Act. ${horaActualizacion}`;
+  aplicarZoom();
+  buildMinimap();
+}
+
+async function load() {
+  if (!modalLocked) showLoading('Cargando mapa...');
+  try {
+    // El endpoint principal ahora devuelve todo en una sola respuesta
+    // (mapa + feriantes + lista negra + precios + usuarios + medios), en vez
+    // de 6 requests separados a Apps Script. Cada uno de esos 6 abría la
+    // planilla por su cuenta y competía por los mismos recursos, así que
+    // esto reduce bastante el tiempo de carga.
+    const resMap = await fetch(API_URL);
+    FULL_DATA = await resMap.json();
+
+    if (FULL_DATA.feriantes)  FERIANTES_LIST = FULL_DATA.feriantes;
+    if (FULL_DATA.listaNegra) LISTA_NEGRA    = FULL_DATA.listaNegra.map(normalizarNombre);
+    if (FULL_DATA.precios)    PRECIOS_MOB    = FULL_DATA.precios;
+    // Usuarios/vendedores: para que el combo Admin esté disponible
+    // independientemente de si hay sesión guardada o no
+    if (FULL_DATA.usuarios) {
+      VENDEDORES_LIST = FULL_DATA.usuarios
+        .filter(u => u.perfil === 1)
+        .map(u => u.nombre);
+    }
+    if (FULL_DATA.medios) MEDIOS_PAGO = FULL_DATA.medios;
+
+    renderMapUI();
+    if (!modalLocked) hideLoading();
+  } catch(e) {
+    if (!modalLocked) hideLoading();
+    document.getElementById('subtitle').textContent = 'Error al cargar datos';
+  }
+}
+
+function buildGrid(gridId, data) {
+  const el = document.getElementById(gridId);
+  const rows = Object.values(data).map(s=>s.r), cols = Object.values(data).map(s=>s.c);
+  const minR=Math.min(...rows), maxR=Math.max(...rows), minC=Math.min(...cols), maxC=Math.max(...cols);
+  el.style.gridTemplateColumns = `repeat(${maxC-minC+1}, 68px)`;
+  const idx = {};
+  Object.entries(data).forEach(([num,s]) => { idx[`${s.r},${s.c}`] = {num,...s}; });
+  let html = '';
+  for (let r=minR; r<=maxR; r++) {
+    for (let c=minC; c<=maxC; c++) {
+      const s = idx[`${r},${c}`];
+      if (s) {
+        const extra  = (FULL_DATA.extraData||{})[s.num] || {};
+        const nombre = extra.n || '';
+        const precio = extra.pr;
+        const resp   = extra.p1r || '';  // responsable = quien hizo la asignación (pago 1)
+        const contrato = extra.contrato === 'SI';
+        const tieneMob = MOB_ITEMS.some(m => Number(extra[m.key]||0) > 0);
+        const ingreso  = extra.ingreso === 'SI';
+        const rubTrunc = s.rb ? (s.rb.length>22 ? s.rb.slice(0,20)+'…' : s.rb) : '';
+        const searchLabel = s.e==='Disponible' ? (nombre||rubTrunc) : rubTrunc;
+        html += `<div class="stand${ingreso ? ' ingresado' : ''}" data-num="${s.num}" data-e="${s.e}"
+          data-rb="${(s.rb||'').replace(/"/g,'&quot;')}"
+          data-n="${nombre.replace(/"/g,'&quot;')}"
+          data-z="${(s.z||'').replace(/"/g,'&quot;')}"
+          data-resp="${resp.replace(/"/g,'&quot;')}"
+          data-contrato="${contrato ? 'SI' : 'NO'}"
+          data-mob="${tieneMob ? 'SI' : 'NO'}"
+          onclick="openModal('${s.num}', event)">
+          ${contrato ? `<span class="contrato-badge" title="Contrato firmado">✍️</span>` : ''}
+          ${tieneMob ? `<span class="mob-badge" title="Tiene mobiliario">🪑</span>` : ''}
+          ${extra.com ? `<span class="com-badge" title="Tiene comentario">📝</span>` : ''}
+          <span class="snum">${s.num}</span>
+          ${searchLabel ? `<span class="srub">${searchLabel.length>22?searchLabel.slice(0,20)+'…':searchLabel}</span>` : ''}
+          ${s.e==='Disponible'&&precio ? `<span class="srub" style="font-weight:700">$${Number(precio).toLocaleString('es-AR')}</span>` : ''}
+        </div>`;
+      } else {
+        html += `<div class="empty"></div>`;
+      }
+    }
+  }
+  el.innerHTML = html;
+}
+
+function buildStats() {
+  const all = [...Object.values(FULL_DATA.pbData||{}), ...Object.values(FULL_DATA.paData||{})];
+  const count = e => all.filter(s=>s.e===e).length;
+  const total = all.length;
+  const nPagado = count('Pagado');
+  const nSenado = count('Señado');
+  const nDisp   = count('Disponible');
+  const ocupados = total - nDisp;
+  const pct = total > 0 ? Math.round((ocupados / total) * 100) : 0;
+
+  // ── Barra de ocupación ──
+  document.getElementById('occPct').textContent = pct + '%';
+  if (total > 0) {
+    const pPagado = (nPagado / total * 100).toFixed(1);
+    const pSenado = (nSenado / total * 100).toFixed(1);
+    const pDisp   = (nDisp   / total * 100).toFixed(1);
+    document.getElementById('occSegPagado').style.width = pPagado + '%';
+    document.getElementById('occSegSenado').style.width = pSenado + '%';
+    document.getElementById('occSegDisp').style.width   = pDisp   + '%';
+    // corner radius: solo una seg → .only; primera y última → radius
+    const segs = document.querySelectorAll('.occ-bar-seg');
+    segs.forEach(s => { s.classList.remove('only'); s.style.borderRadius = ''; });
+    const visible = [...segs].filter(s => parseFloat(s.style.width) > 0);
+    if (visible.length === 1) {
+      visible[0].classList.add('only');
+    } else if (visible.length > 1) {
+      visible[0].style.borderRadius = '100px 0 0 100px';
+      visible[visible.length-1].style.borderRadius = '0 100px 100px 0';
+    }
+  }
+  // Leyenda inferior (opcional: puede no existir en el diseño compacto)
+  const pPagadoLabel = total > 0 ? Math.round(nPagado/total*100) : 0;
+  const pSenadoLabel = total > 0 ? Math.round(nSenado/total*100) : 0;
+  const pDispLabel   = total > 0 ? Math.round(nDisp  /total*100) : 0;
+  const lblP = document.getElementById('occLblPagado'); if (lblP) lblP.textContent = `Pagado ${pPagadoLabel}%`;
+  const lblS = document.getElementById('occLblSenado'); if (lblS) lblS.textContent = `Señado ${pSenadoLabel}%`;
+  const lblD = document.getElementById('occLblDisp');   if (lblD) lblD.textContent = `Libre ${pDispLabel}%`;
+
+  // Detalle numérico Aurora
+  const vp = document.getElementById('occValPagado'); if(vp) vp.textContent = nPagado;
+  const vs = document.getElementById('occValSenado'); if(vs) vs.textContent = nSenado;
+  const vd = document.getElementById('occValDisp');   if(vd) vd.textContent = nDisp;
+  const vt = document.getElementById('occValTotal');  if(vt) vt.textContent = total;
+
+  // Pills del header
+  const hp = document.getElementById('hpillPagado');
+  const hs = document.getElementById('hpillSenado');
+  const hd = document.getElementById('hpillDisp');
+  if (hp) { hp.textContent = `Pagado ${nPagado}`; hp.style.display = 'inline-flex'; }
+  if (hs) { hs.textContent = `Señado ${nSenado}`; hs.style.display = 'inline-flex'; }
+  if (hd) { hd.textContent = `Libre ${nDisp}`;    hd.style.display = 'inline-flex'; }
+}
+
+function switchFloor(f, btn) {
+  currentFloor = f;
+  document.querySelectorAll('.floor').forEach(el=>el.classList.remove('active'));
+  document.getElementById(`floor-${f}`).classList.add('active');
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  applyFilters();
+  // Esperamos al próximo repintado real (en vez de un setTimeout con tiempo fijo)
+  // para que el piso ya esté visible y con su layout final antes de reaplicar el zoom.
+  requestAnimationFrame(() => requestAnimationFrame(() => { aplicarZoom(); buildMinimap(); }));
+}
+
+let filtroMobiliario = false, filtroDisponible = false;
+
+function toggleFiltro(tipo, btn) {
+  if (tipo === 'mobiliario') filtroMobiliario = !filtroMobiliario;
+  if (tipo === 'disponible') filtroDisponible = !filtroDisponible;
+  btn.classList.toggle('active');
+  applyFilters();
+}
+
+function toggleMisVentas(btn) {
+  soloMisVentas = !soloMisVentas;
+  btn.classList.toggle('active', soloMisVentas);
+  applyFilters();
+}
+
+function applyFilters() {
+  const q = document.getElementById('searchInput').value.toLowerCase().trim();
+  const gridId = currentFloor==='pb' ? 'grid-pb' : 'grid-pa';
+  const anyActive = filtroMobiliario || filtroDisponible || soloMisVentas || !!q;
+  document.querySelectorAll(`#${gridId} .stand`).forEach(el => {
+    const matchMob  = !filtroMobiliario || el.dataset.mob==='SI';
+    const matchDisp = !filtroDisponible || el.dataset.e==='Disponible';
+    const matchS    = !q || el.dataset.num.includes(q) || (el.dataset.rb||'').toLowerCase().includes(q) || (el.dataset.n||'').toLowerCase().includes(q);
+    const matchMine = !soloMisVentas || (el.dataset.resp||'').toLowerCase() === (CURRENT_USER||'').toLowerCase();
+    if (matchMob && matchDisp && matchS && matchMine) {
+      el.classList.remove('dimmed');
+      if (anyActive) el.classList.add('highlighted'); else el.classList.remove('highlighted');
+    } else {
+      el.classList.add('dimmed'); el.classList.remove('highlighted');
+    }
+  });
+}
+
+// ── ACORDEÓN genérico para secciones colapsables del modal ──────────────────
+function setAcc(headerId, bodyId, open) {
+  const header = document.getElementById(headerId);
+  const body   = document.getElementById(bodyId);
+  if (!header || !body) return;
+  header.classList.toggle('open', open);
+  body.classList.toggle('open', open);
+}
+function toggleAcc(headerId, bodyId) {
+  const body = document.getElementById(bodyId);
+  if (!body) return;
+  setAcc(headerId, bodyId, !body.classList.contains('open'));
+}
+
+let modalHasZoomOrigin = false;
+
+function openModal(id, evt) {
+  currentStandId = id;
+  const data  = (FULL_DATA.pbData||{})[id] || (FULL_DATA.paData||{})[id] || {};
+  const extra = (FULL_DATA.extraData||{})[id] || {};
+  const estado = data.e || 'Disponible';
+  const icons  = { Pagado:'✅', Señado:'⭐', Disponible:'🔓', Excedido:'⚠️' };
+
+  // Sticky header
+  const stickyNum   = document.getElementById('modalStickyNum');
+  const stickyBadge = document.getElementById('modalStickyBadge');
+  if (stickyNum)   stickyNum.textContent = `Stand ${id}`;
+  if (stickyBadge) { stickyBadge.setAttribute('data-e', estado); stickyBadge.textContent = `${icons[estado]||''} ${estado}`; }
+
+  document.getElementById('modalNombre').textContent = extra.n || '';
+  document.getElementById('modalNuevoBadge').style.display = (extra.condicion === 'NUEVO') ? 'inline-block' : 'none';
+  document.getElementById('modalRubro').textContent  = data.rb || '(sin rubro)';
+  document.getElementById('modalZona').textContent   = extra.contrato === 'SI' ? '✍️ Contrato firmado' : '';
+
+  // Teléfono / WhatsApp
+  const telEl = document.getElementById('modalTel');
+  const tel   = extra.tel || '';
+  if (tel) {
+    const telLimpio = tel.replace(/[\s\-\(\)\.]/g, '');
+    const telWA = telLimpio.startsWith('0')
+      ? '54' + telLimpio.slice(1)
+      : telLimpio.startsWith('+') ? telLimpio.slice(1) : '54' + telLimpio;
+    telEl.href = `https://wa.me/${telWA}`;
+    document.getElementById('modalTelText').textContent = tel;
+    telEl.style.display = 'inline-flex';
+  } else {
+    telEl.style.display = 'none';
+  }
+
+  // Dinero
+  const moneyEl = document.getElementById('modalMoney');
+  const precio  = Number(extra.pr || 0);
+  if (estado === 'Disponible' && precio > 0) {
+    moneyEl.style.display = 'flex';
+    document.getElementById('modalTotal').textContent = `$${precio.toLocaleString('es-AR')}`;
+    const debeBox = document.getElementById('modalDebeBox');
+    document.getElementById('modalDebe').textContent = `$${precio.toLocaleString('es-AR')}`;
+    debeBox.className = 'money-box debe-mal';
+  } else if (extra.p !== undefined || extra.d !== undefined) {
+    moneyEl.style.display = 'flex';
+    document.getElementById('modalTotal').textContent = `$${(extra.p||0).toLocaleString('es-AR')}`;
+    const debe = extra.d || 0;
+    const debeBox = document.getElementById('modalDebeBox');
+    document.getElementById('modalDebe').textContent = `$${debe.toLocaleString('es-AR')}`;
+    debeBox.className = 'money-box ' + (debe>0 ? 'debe-mal' : 'debe-ok');
+  } else {
+    moneyEl.style.display = 'none';
+  }
+
+  const overlayEl = document.getElementById('modalOverlay');
+  const modalEl   = document.querySelector('.modal');
+  overlayEl.classList.add('open');
+
+  const clickEl = evt && evt.currentTarget;
+  modalHasZoomOrigin = !!clickEl;
+  if (clickEl) {
+    const sr = clickEl.getBoundingClientRect();
+    const mr = modalEl.getBoundingClientRect();
+    let ox = ((sr.left + sr.width / 2 - mr.left) / mr.width) * 100;
+    let oy = ((sr.top + sr.height / 2 - mr.top) / mr.height) * 100;
+    ox = Math.max(0, Math.min(100, ox));
+    oy = Math.max(0, Math.min(100, oy));
+    modalEl.style.transformOrigin = ox + '% ' + oy + '%';
+    modalEl.style.transition = 'none';
+    modalEl.style.transform  = 'scale(.05)';
+    modalEl.style.opacity    = '0';
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        modalEl.style.transition = 'transform .45s cubic-bezier(.32,1,.64,1), opacity .3s ease';
+        modalEl.style.transform  = 'scale(1)';
+        modalEl.style.opacity    = '1';
+      });
+    });
+  } else {
+    modalEl.style.transformOrigin = '';
+    modalEl.style.transition = 'none';
+    modalEl.style.transform  = 'translateY(100%)';
+    modalEl.style.opacity    = '1';
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        modalEl.style.transition = 'transform .45s cubic-bezier(.32,1,.64,1)';
+        modalEl.style.transform  = 'translateY(0)';
+      });
+    });
+  }
+
+  modalEl.scrollTop = 0;
+
+  // ── Centrar mapa en el stand seleccionado ──
+  (function centerOnStand() {
+    const floorId = (FULL_DATA.pbData||{})[id] ? 'floor-pb' : 'floor-pa';
+    const floorEl = document.getElementById(floorId);
+    if (!floorEl) return;
+    const standEl = floorEl.querySelector(`.stand[data-num="${id}"]`);
+    if (!standEl) return;
+    // Quitar pulse previo si hubiera
+    document.querySelectorAll('.stand-pulse').forEach(el => el.remove());
+    // scrollIntoView sobre el stand — respeta el transform scale del map-inner
+    standEl.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+    // Pulso visual para que sea obvio cuál stand se seleccionó
+    const pulse = document.createElement('div');
+    pulse.className = 'stand-pulse';
+    standEl.appendChild(pulse);
+    setTimeout(() => pulse.remove(), 1200);
+  })();
+  document.getElementById('mobPanel').classList.remove('active');
+  document.getElementById('comentariosPanel').classList.remove('active');
+  document.getElementById('mobAdicionalPanel').classList.remove('active');
+  document.getElementById('mainPanel').classList.remove('hidden');
+  resetMobQty();
+  updateMobSummary();
+
+  // Ícono de comentarios en el header: solo perfil 1 (Vendedor) y 3 (Admin)
+  const comentariosIconBtn = document.getElementById('comentariosIconBtn');
+  if (CURRENT_PERFIL === 1 || CURRENT_PERFIL === 3) {
+    comentariosIconBtn.style.display = 'flex';
+    resetComentariosUI(extra.com || '');
+  } else {
+    comentariosIconBtn.style.display = 'none';
+  }
+
+  // Sección asignar feriante: solo para Disponibles Y VENDEDORES o ADMIN
+  const assignSection = document.getElementById('assignSection');
+  if (estado === 'Disponible' && (CURRENT_PERFIL === 1 || CURRENT_PERFIL === 3)) {
+    assignSection.style.display = 'block';
+    resetAssignUI();
+  } else {
+    assignSection.style.display = 'none';
+  }
+
+  // Mobiliario readonly: para Señados y Pagados
+  if (estado === 'Señado' || estado === 'Pagado') {
+    renderMobReadonly(extra);
+  } else {
+    document.getElementById('mobReadonly').style.display = 'none';
+  }
+
+  // Sección pagos: formulario para Señados (abierto), historial colapsable para Pagados
+  const pagosSection = document.getElementById('pagosSection');
+  if (estado === 'Señado' || estado === 'Pagado') {
+    pagosSection.style.display = 'block';
+    renderPagos(extra, estado === 'Pagado');
+    if (estado === 'Pagado') {
+      // Pagado: solo historial de lectura, sin formulario para cargar más pagos, colapsado por defecto
+      document.getElementById('pagoForm').style.display = 'none';
+      setAcc('pagosHeader', 'pagosBody', false);
+    } else {
+      // Señado: se necesita ver el formulario para cargar el próximo pago, abierto por defecto
+      setAcc('pagosHeader', 'pagosBody', true);
+    }
+  } else {
+    pagosSection.style.display = 'none';
+  }
+
+  // Sección mob adicional: solo para Pagados y perfil 1
+  const mobAdicionalSection = document.getElementById('mobAdicionalSection');
+  if (estado === 'Pagado' && (CURRENT_PERFIL === 3)) {
+    mobAdicionalSection.style.display = 'block';
+    resetMobAdicionalUI();
+  } else {
+    mobAdicionalSection.style.display = 'none';
+  }
+}
+
+// ── ASIGNAR FERIANTE – lógica de búsqueda ──────────────────────────────────
+let selectedFeriante = null;
+let selectedFerianteEsNuevo = false;
+
+function resetAssignUI() {
+  selectedFeriante = null;
+  selectedFerianteEsNuevo = false;
+  setAssignFieldsDisabled(false);
+  document.getElementById('assignSearch').value = '';
+  document.getElementById('assignSearchClear').style.display = 'none';
+  document.getElementById('assignDropdown').classList.remove('open');
+  document.getElementById('assignPill').classList.remove('visible', 'blacklisted');
+  document.getElementById('assignPillName').textContent = '';
+  document.getElementById('assignBlacklistWarning').classList.remove('visible');
+  document.getElementById('assignMsg').textContent = '';
+  document.getElementById('assignMsg').className = 'assign-msg';
+  document.getElementById('assignBtn').disabled = true;
+  document.getElementById('assignSearchWrap').style.display = 'block';
+  document.getElementById('assignMonto').value = '';
+  // Cargar medios de pago en el selector de seña inicial
+  cargarMediosPago().then(() => {
+    const sel = document.getElementById('assignMedio');
+    if (MEDIOS_PAGO.length) {
+      sel.innerHTML = '<option value="">— Elegí medio —</option>' +
+        MEDIOS_PAGO.map(m => `<option value="${m}">${m}</option>`).join('');
+    } else {
+      sel.innerHTML = '<option value="">Sin medios cargados</option>';
+    }
+    // Combo vendedor seña: solo para Admin
+    const vendedorGroup = document.getElementById('assignVendedorGroup');
+    const vendedorSel   = document.getElementById('assignVendedor');
+    if (CURRENT_PERFIL === 3 && VENDEDORES_LIST.length) {
+      vendedorGroup.style.display = 'block';
+      vendedorSel.innerHTML = '<option value="">— Elegí vendedor —</option>' +
+        VENDEDORES_LIST.map(v => `<option value="${v}">${v}</option>`).join('');
+    } else {
+      vendedorGroup.style.display = 'none';
+    }
+  });
+}
+
+// Deshabilita/habilita todos los campos del panel de asignación mientras
+// hay una request en curso, para evitar que se toquen combos/inputs
+// mientras se está guardando (el botón "Asignar y señar" ya se maneja
+// aparte con setBtnBusy).
+function setAssignFieldsDisabled(disabled) {
+  document.querySelectorAll('#assignSection input, #assignSection select, #assignSection button')
+    .forEach(el => { el.disabled = disabled; });
+}
+
+function checkAssignBtn() {
+  const feriante = selectedFeriante;
+  const monto    = Number(document.getElementById('assignMonto').value);
+  const medio    = document.getElementById('assignMedio').value.trim();
+  const { total: precio } = calcTotalConMob();
+  const btn      = document.getElementById('assignBtn');
+  const msgEl    = document.getElementById('assignMsg');
+
+  // Validar monto vs precio total (stand + mobiliario)
+  if (monto > 0 && precio > 0 && monto > precio) {
+    msgEl.textContent = `El monto no puede superar el precio total ($${precio.toLocaleString('es-AR')}).`;
+    msgEl.className   = 'assign-msg err';
+    btn.disabled = true;
+    return;
+  }
+  msgEl.textContent = '';
+  msgEl.className   = 'assign-msg';
+  btn.disabled = !(feriante && monto > 0 && medio);
+}
+
+function filterFeriantes() {
+  const q   = document.getElementById('assignSearch').value.trim().toLowerCase();
+  const dd  = document.getElementById('assignDropdown');
+  const clr = document.getElementById('assignSearchClear');
+
+  clr.style.display = q ? 'block' : 'none';
+
+  const matches = q
+    ? FERIANTES_LIST.filter(f => f.toLowerCase().includes(q))
+    : FERIANTES_LIST.slice(0, 40);  // sin texto muestra los primeros 40
+
+  if (!matches.length) {
+    dd.innerHTML = `<div class="assign-dropdown-empty">Sin resultados para "${q}"</div>`;
+  } else {
+    dd.innerHTML = matches.map(f => {
+      const label = q
+        ? f.replace(new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'gi'),
+            '<mark>$1</mark>')
+        : f;
+      const enListaNegra = estaEnListaNegra(f);
+      const tag = enListaNegra ? '<span class="bl-tag">⚠️ Lista negra</span>' : '';
+      return `<div class="assign-dropdown-item${enListaNegra ? ' blacklisted' : ''}" ontouchstart="" onclick="selectFeriante('${f.replace(/'/g,"\\'")}')">
+        ${label}${tag}
+      </div>`;
+    }).join('');
+  }
+  dd.classList.add('open');
+}
+
+function selectFeriante(nombre, esNuevo) {
+  selectedFeriante = nombre;
+  selectedFerianteEsNuevo = !!esNuevo;
+  document.getElementById('assignPillName').textContent = nombre;
+  document.getElementById('assignPill').classList.add('visible');
+  document.getElementById('assignSearchWrap').style.display = 'none';
+  document.getElementById('assignDropdown').classList.remove('open');
+  document.getElementById('assignMsg').textContent = '';
+  document.getElementById('assignMsg').className = 'assign-msg';
+
+  // Warning: feriante en Lista Negra (solo avisa, no bloquea la venta)
+  const enListaNegra = estaEnListaNegra(nombre);
+  document.getElementById('assignPill').classList.toggle('blacklisted', enListaNegra);
+  document.getElementById('assignBlacklistWarning').classList.toggle('visible', enListaNegra);
+
+  checkAssignBtn();
+}
+
+function clearAssignSelection() {
+  selectedFeriante = null;
+  selectedFerianteEsNuevo = false;
+  document.getElementById('assignPill').classList.remove('visible', 'blacklisted');
+  document.getElementById('assignBlacklistWarning').classList.remove('visible');
+  document.getElementById('assignSearchWrap').style.display = 'block';
+  document.getElementById('assignSearch').value = '';
+  document.getElementById('assignSearchClear').style.display = 'none';
+  document.getElementById('assignSearch').focus();
+  checkAssignBtn();
+}
+
+function clearAssignSearch() {
+  document.getElementById('assignSearch').value = '';
+  document.getElementById('assignSearchClear').style.display = 'none';
+  document.getElementById('assignDropdown').classList.remove('open');
+  document.getElementById('assignSearch').focus();
+}
+
+// Cerrar dropdown al tocar fuera
+document.addEventListener('click', e => {
+  const wrap = document.getElementById('assignSearchWrap');
+  if (wrap && !wrap.contains(e.target)) {
+    document.getElementById('assignDropdown').classList.remove('open');
+  }
+});
+
+async function asignarFeriante() {
+  const feriante = selectedFeriante;
+  const msgEl    = document.getElementById('assignMsg');
+  const btn      = document.getElementById('assignBtn');
+  const monto    = Number(document.getElementById('assignMonto').value);
+  const medio    = document.getElementById('assignMedio').value.trim();
+
+  msgEl.textContent = '';
+  msgEl.className = 'assign-msg';
+
+  if (!feriante) { msgEl.textContent = 'Seleccioná un feriante primero.'; msgEl.className = 'assign-msg err'; return; }
+  if (!monto || monto <= 0) { msgEl.textContent = 'Ingresá un monto válido.'; msgEl.className = 'assign-msg err'; return; }
+  if (!medio) { msgEl.textContent = 'Seleccioná un medio de pago.'; msgEl.className = 'assign-msg err'; return; }
+
+  // Vendedor: si Admin, debe elegir en nombre de quién registra
+  let vendedor = '';
+  if (CURRENT_PERFIL === 3) {
+    vendedor = (document.getElementById('assignVendedor').value || '').trim();
+    if (!vendedor) { msgEl.textContent = 'Seleccioná el vendedor en nombre del cual registrás la asignación.'; msgEl.className = 'assign-msg err'; return; }
+  }
+
+  // Validar monto vs precio total del stand + mobiliario
+  const { total: precio } = calcTotalConMob();
+  if (precio > 0 && monto > precio) {
+    msgEl.textContent = `El monto no puede superar el precio total ($${precio.toLocaleString('es-AR')}).`;
+    msgEl.className = 'assign-msg err';
+    return;
+  }
+  if (!currentStandId) return;
+
+  setBtnBusy(btn, 'Guardando...');
+  modalLocked = true;
+  setAssignFieldsDisabled(true);
+
+  try {
+    // Paso 1: asignar feriante (+ mobiliario)
+    // El responsable de la asignación es el vendedor elegido (Admin) o el usuario logueado
+    const responsableAsign = (CURRENT_PERFIL === 3 && vendedor) ? vendedor : CURRENT_USER;
+    const mobParams = MOB_ITEMS.map(m => `${m.key}=${mobQty[m.key]||0}`).join('&');
+    const adminParam = (CURRENT_PERFIL === 3 && vendedor) ? `&admin=${encodeURIComponent(CURRENT_USER)}` : '';
+    const nuevoParam = selectedFerianteEsNuevo ? '&nuevo=SI' : '&nuevo=NO';
+    const urlAsignar = `${API_URL}?tipo=asignar&stand=${encodeURIComponent(currentStandId)}&feriante=${encodeURIComponent(feriante)}&user=${encodeURIComponent(responsableAsign)}&${mobParams}${adminParam}${nuevoParam}`;
+    const resAsignar = await fetch(urlAsignar);
+    const dataAsignar = await resAsignar.json();
+    if (!dataAsignar.ok) {
+      msgEl.textContent = dataAsignar.error || 'Error al asignar el feriante.';
+      msgEl.className = 'assign-msg err';
+      clearBtnBusy(btn, 'Asignar y señar');
+      modalLocked = false;
+      setAssignFieldsDisabled(false);
+      return;
+    }
+
+    // Paso 2: registrar pago 1
+    const vendedorParam = (CURRENT_PERFIL === 3 && vendedor) ? `&vendedor=${encodeURIComponent(vendedor)}` : '';
+    const urlPago = `${API_URL}?tipo=pago&stand=${encodeURIComponent(currentStandId)}&num=1&monto=${monto}&medio=${encodeURIComponent(medio)}&user=${encodeURIComponent(CURRENT_USER)}${vendedorParam}`;
+    const resPago = await fetch(urlPago);
+    const dataPago = await resPago.json();
+    if (!dataPago.ok) {
+      msgEl.textContent = `Feriante asignado pero error al registrar la seña: ${dataPago.error || ''}`;
+      msgEl.className = 'assign-msg err';
+      clearBtnBusy(btn, 'Asignar y señar');
+      modalLocked = false;
+      setAssignFieldsDisabled(false);
+      return;
+    }
+
+    // Todo OK: patcheamos el stand localmente (pasa a Señado, con el
+    // feriante y la seña recién cargada) en vez de re-pedir el mapa entero.
+    const standObj = FULL_DATA.pbData[currentStandId] || FULL_DATA.paData[currentStandId];
+    if (standObj) standObj.e = 'Señado';
+    if (!FULL_DATA.extraData) FULL_DATA.extraData = {};
+    if (!FULL_DATA.extraData[currentStandId]) FULL_DATA.extraData[currentStandId] = {};
+    const exAsig = FULL_DATA.extraData[currentStandId];
+    exAsig.n         = feriante;
+    exAsig.condicion = selectedFerianteEsNuevo ? 'NUEVO' : 'HABITUAL';
+    exAsig.p1r       = responsableAsign;
+    exAsig.p1f       = formatFecha(new Date());
+    exAsig.p1m       = monto;
+    exAsig.p1med     = medio;
+    exAsig.d         = Math.max(0, precio - monto);
+    MOB_ITEMS.forEach(m => { exAsig[m.key] = mobQty[m.key] || 0; });
+
+    msgEl.textContent = `✅ ${feriante} asignado y seña de $${monto.toLocaleString('es-AR')} registrada.`;
+    msgEl.className = 'assign-msg ok';
+    renderMapUI();
+    await showSuccessOverlay('Stand cargado', `${feriante} · Puesto ${currentStandId}`);
+    document.getElementById('modalOverlay').classList.remove('open');
+    modalLocked = false;
+    setAssignFieldsDisabled(false);
+
+  } catch(err) {
+    msgEl.textContent = 'Error de conexión.';
+    msgEl.className = 'assign-msg err';
+    clearBtnBusy(btn, 'Asignar y señar');
+    modalLocked = false;
+    setAssignFieldsDisabled(false);
+  }
+
+  clearBtnBusy(btn, 'Asignar y señar');
+}
+
+let modalLocked = false;
+
+// ── LOADING OVERLAY ──────────────────────────────────────────────────────────
+let _loadingInterval = null;
+let _loadingShownAt = 0;
+const LOADING_MIN_MS = 380; // tiempo mínimo visible: evita que "titile" si la respuesta es instantánea
+
+function showLoading(text = 'Guardando...') {
+  document.getElementById('loadingText').textContent = text;
+  const bar = document.getElementById('loadingBar');
+  const overlay = document.getElementById('loadingOverlay');
+  bar.style.transition = 'none';
+  bar.style.width = '0%';
+  overlay.classList.add('visible');
+  _loadingShownAt = Date.now();
+  // Un frame después activamos el fade-in (si lo hacemos en el mismo frame que
+  // .visible, el navegador puede saltarse la transición de opacity)
+  requestAnimationFrame(() => {
+    bar.style.transition = '';
+    overlay.classList.add('shown');
+  });
+  // Progreso animado (no determinista): llega al 85% y se detiene
+  let pct = 0;
+  clearInterval(_loadingInterval);
+  _loadingInterval = setInterval(() => {
+    const step = pct < 40 ? 6 : pct < 70 ? 3 : pct < 85 ? 1 : 0;
+    pct = Math.min(85, pct + step);
+    bar.style.width = pct + '%';
+  }, 120);
+}
+function hideLoading() {
+  clearInterval(_loadingInterval);
+  const bar = document.getElementById('loadingBar');
+  const overlay = document.getElementById('loadingOverlay');
+  const elapsed = Date.now() - _loadingShownAt;
+  const wait = Math.max(0, LOADING_MIN_MS - elapsed);
+  setTimeout(() => {
+    bar.style.width = '100%';
+    setTimeout(() => {
+      overlay.classList.remove('shown'); // dispara el fade-out (opacity, .18s)
+      setTimeout(() => {
+        overlay.classList.remove('visible');
+        bar.style.width = '0%';
+      }, 200);
+    }, 220);
+  }, wait);
+}
+
+// ── SONIDO DE CONFIRMACIÓN (cha-ching + cola de campana) ────────────────────
+// Generado con Web Audio API: no depende de ningún archivo de audio externo.
+let _successAudioCtx = null;
+
+function _getSuccessAudioCtx() {
+  if (!_successAudioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    _successAudioCtx = new AC();
+  }
+  // Los navegadores suspenden el audio hasta el primer gesto del usuario;
+  // como esto se llama tras un click en "Asignar y señar", ya hay gesto.
+  if (_successAudioCtx.state === 'suspended') _successAudioCtx.resume();
+  return _successAudioCtx;
+}
+
+function _successTone(ctx, freq, start, dur, { type = 'sine', gain = 0.2 } = {}) {
+  const osc = ctx.createOscillator();
+  const g   = ctx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, start);
+  g.gain.setValueAtTime(0, start);
+  g.gain.linearRampToValueAtTime(gain, start + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.001, start + dur);
+  osc.connect(g).connect(ctx.destination);
+  osc.start(start);
+  osc.stop(start + dur + 0.02);
+}
+
+function playSuccessSound() {
+  const ctx = _getSuccessAudioCtx();
+  if (!ctx) return; // navegador sin soporte de Web Audio: seguimos sin sonido
+  const t = ctx.currentTime;
+  _successTone(ctx, 1567.98, t,        0.10, { type: 'triangle', gain: 0.20 });
+  _successTone(ctx, 2093,    t + 0.08, 0.16, { type: 'triangle', gain: 0.22 });
+  _successTone(ctx, 2093,    t + 0.24, 0.65, { type: 'sine',     gain: 0.14 }); // cola larga
+  _successTone(ctx, 3135,    t + 0.24, 0.5,  { type: 'sine',     gain: 0.05 }); // armónico de la cola
+}
+
+// Overlay de éxito (check animado, pantalla completa) para la confirmación
+// de carga de stand. Se muestra apenas se confirma la asignación/seña, y
+// queda fijo hasta que el usuario aprieta "Continuar". El mapa se recarga
+// de fondo mientras tanto (mapLoadPromise); si el usuario aprieta el botón
+// antes de que esa recarga termine, se muestra la ruedita de carga hasta
+// que esté lista.
+function showSuccessOverlay(title, subtitle, mapLoadPromise = Promise.resolve()) {
+  return new Promise(resolve => {
+    const overlay = document.getElementById('successOverlay');
+    const btn = document.getElementById('successContinueBtn');
+    document.getElementById('successTitle').textContent = title;
+    document.getElementById('successSub').textContent = subtitle;
+
+    // Reinicia las animaciones por si el overlay ya se mostró antes
+    overlay.querySelectorAll('.success-chk-ring, .success-chk-mid, .success-chk-core')
+      .forEach(el => { el.style.animation = 'none'; void el.offsetWidth; el.style.animation = null; });
+
+    overlay.classList.add('visible');
+    requestAnimationFrame(() => overlay.classList.add('shown'));
+    playSuccessSound();
+
+    let mapReady = false;
+    mapLoadPromise.then(() => { mapReady = true; }).catch(() => { mapReady = true; });
+
+    const finish = () => {
+      overlay.classList.remove('shown');
+      setTimeout(() => {
+        overlay.classList.remove('visible');
+        resolve();
+      }, 200);
+    };
+
+    const onContinue = () => {
+      btn.removeEventListener('click', onContinue);
+      if (mapReady) {
+        finish();
+        return;
+      }
+      // El mapa todavía se está actualizando: recién acá mostramos la
+      // ruedita de carga, y cerramos todo cuando termine.
+      showLoading('Actualizando mapa...');
+      mapLoadPromise.then(() => {
+        hideLoading();
+        finish();
+      }).catch(() => {
+        hideLoading();
+        finish();
+      });
+    };
+
+    btn.addEventListener('click', onContinue);
+  });
+}
+
+// ── TOAST ────────────────────────────────────────────────────────────────────
+let _toastTimer = null;
+function showToast(msg, type = 'ok', duration = 2500) {
+  const container = document.getElementById('toastContainer');
+  const existing  = container.querySelector('.toast');
+  if (existing) existing.remove();
+  if (_toastTimer) { clearTimeout(_toastTimer); _toastTimer = null; }
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  container.appendChild(el);
+  _toastTimer = setTimeout(() => {
+    el.classList.add('out');
+    setTimeout(() => { if (el.parentNode) el.remove(); }, 230);
+    _toastTimer = null;
+  }, duration);
+}
+
+// Estado "ocupado" inline en un botón (spinner + texto), para acciones rápidas
+// que no ameritan tapar toda la pantalla con el overlay.
+function setBtnBusy(btn, text) {
+  if (!btn) return;
+  if (btn.dataset.origHtml === undefined) btn.dataset.origHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<span class="btn-spinner"></span>${text}`;
+}
+function clearBtnBusy(btn, text) {
+  if (!btn) return;
+  btn.disabled = false;
+  if (text !== undefined) btn.textContent = text;
+  else if (btn.dataset.origHtml !== undefined) btn.innerHTML = btn.dataset.origHtml;
+  delete btn.dataset.origHtml;
+}
+
+function lockModal(text = 'Actualizando mapa...') {
+  modalLocked = true;
+  showLoading(text);
+}
+
+function unlockModal() {
+  modalLocked = false;
+  hideLoading();
+}
+
+function closeModal(e) {
+  if (modalLocked) return;
+  if (!e || e.target===document.getElementById('modalOverlay') || e.currentTarget.tagName==='BUTTON') {
+    const modalEl = document.querySelector('.modal');
+    if (modalHasZoomOrigin) {
+      modalEl.style.transition = 'transform .32s cubic-bezier(.36,0,.66,-0.01), opacity .28s ease';
+      modalEl.style.transform  = 'scale(.05)';
+      modalEl.style.opacity    = '0';
+      setTimeout(() => {
+        document.getElementById('modalOverlay').classList.remove('open');
+        modalEl.style.transition     = '';
+        modalEl.style.transform      = '';
+        modalEl.style.opacity        = '';
+        modalEl.style.transformOrigin = '';
+      }, 320);
+    } else {
+      modalEl.classList.add('closing');
+      setTimeout(() => {
+        document.getElementById('modalOverlay').classList.remove('open');
+        modalEl.classList.remove('closing');
+      }, 360);
+    }
+  }
+}
+
+const ZOOM_STEPS = [0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3];
+const ZOOM_MIN = ZOOM_STEPS[0];
+const ZOOM_MAX = ZOOM_STEPS[ZOOM_STEPS.length - 1];
+let zoomIdx = 2;
+let liveScale = null; // escala continua durante el pinch (más fluida que los steps fijos)
+
+function getScale() { return liveScale !== null ? liveScale : ZOOM_STEPS[zoomIdx]; }
+
+function aplicarZoom() {
+  const scale = getScale();
+  document.querySelectorAll('.map-zoom').forEach(zoom => { zoom.style.transform=`scale(${scale})`; });
+  document.getElementById('zoomLabel').textContent = Math.round(scale*100)+'%';
+  fixMapSize(); centerMap(); updateMinimapViewport();
+}
+// Versión liviana para usar DURANTE el pinch: solo toca transform (GPU, sin reflow).
+// fixMapSize()/centerMap() recalculan width/height/margin — eso es "layout", caro si se hace
+// en cada touchmove. Por eso se difieren hasta que el gesto termina (ver touchend del pinch).
+function aplicarZoomLive() {
+  const scale = getScale();
+  document.querySelectorAll('.map-zoom').forEach(zoom => { zoom.style.transform=`scale(${scale})`; });
+  document.getElementById('zoomLabel').textContent = Math.round(scale*100)+'%';
+}
+function cambiarZoom(dir) { liveScale = null; zoomIdx=Math.max(0,Math.min(ZOOM_STEPS.length-1,zoomIdx+dir)); aplicarZoom(); }
+
+// ── PINCH-TO-ZOOM (mobile) + CTRL+SCROLL (desktop) ───────────────────────────
+(function() {
+  let pinchStartDist = null;
+  let pinchStartIdx  = null;
+  let pinchContainer = null;
+  let anchorLocalX = 0, anchorLocalY = 0;
+
+  function getPinchDist(touches) {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx*dx + dy*dy);
+  }
+
+  function getMid(touches) {
+    return { x: (touches[0].clientX + touches[1].clientX) / 2, y: (touches[0].clientY + touches[1].clientY) / 2 };
+  }
+
+  // Detectar si el toque ocurre dentro del modal (para no interferir)
+  function isInsideModal(touch) {
+    const el = document.elementFromPoint(touch.clientX, touch.clientY);
+    return el && document.getElementById('modalOverlay').contains(el);
+  }
+
+  document.addEventListener('touchstart', e => {
+    if (e.touches.length === 2) {
+      if (isInsideModal(e.touches[0])) return;
+      e.preventDefault();
+      pinchStartDist = getPinchDist(e.touches);
+      pinchStartIdx  = zoomIdx;
+      liveScale = ZOOM_STEPS[zoomIdx]; // arranca en la escala actual, luego se mueve continuo
+
+      // Sin transición durante el pinch: si no, la animación "compite" con los dedos y se siente robótico
+      document.querySelectorAll('.map-zoom').forEach(zoom => { zoom.style.transition = 'none'; });
+
+      // Guardamos el punto donde se "pellizcó" (en coordenadas sin escala del mapa)
+      const mid = getMid(e.touches);
+      const el  = document.elementFromPoint(mid.x, mid.y);
+      pinchContainer = el && el.closest('.map-scroll');
+      const inner = pinchContainer && pinchContainer.querySelector('.map-zoom');
+      if (inner) {
+        const rect = inner.getBoundingClientRect();
+        anchorLocalX = (mid.x - rect.left) / liveScale;
+        anchorLocalY = (mid.y - rect.top) / liveScale;
+      } else {
+        pinchContainer = null;
+      }
+    }
+  }, { passive: false });
+
+  document.addEventListener('touchmove', e => {
+    if (e.touches.length === 2 && pinchStartDist !== null) {
+      if (isInsideModal(e.touches[0])) return;
+      e.preventDefault();
+      const dist  = getPinchDist(e.touches);
+      const ratio = dist / pinchStartDist;
+      // Escala continua (sin encajar en steps) para que el pinch se sienta natural
+      liveScale = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, ZOOM_STEPS[pinchStartIdx] * ratio));
+      aplicarZoomLive();
+
+      // Reacomodar el scroll para que el punto pellizcado quede fijo bajo los dedos
+      if (pinchContainer) {
+        const inner = pinchContainer.querySelector('.map-zoom');
+        if (inner) {
+          const mid  = getMid(e.touches);
+          const rect = inner.getBoundingClientRect();
+          const currentScreenX = rect.left + anchorLocalX * liveScale;
+          const currentScreenY = rect.top  + anchorLocalY * liveScale;
+          pinchContainer.scrollLeft += (currentScreenX - mid.x);
+          pinchContainer.scrollTop  += (currentScreenY - mid.y);
+        }
+      }
+    }
+  }, { passive: false });
+
+  document.addEventListener('touchend', e => {
+    if (e.touches.length < 2) {
+      pinchStartDist = null;
+      pinchStartIdx  = null;
+      pinchContainer = null;
+
+      if (liveScale !== null) {
+        // Al soltar los dedos, encajamos en el step más cercano (para que quede consistente con los botones +/−)
+        let bestIdx = 0, bestDiff = Infinity;
+        ZOOM_STEPS.forEach((s, i) => {
+          const diff = Math.abs(s - liveScale);
+          if (diff < bestDiff) { bestDiff = diff; bestIdx = i; }
+        });
+        zoomIdx = bestIdx;
+        liveScale = null;
+        // Restauramos la transición suave para el "snap" final y para los botones +/−
+        document.querySelectorAll('.map-zoom').forEach(zoom => { zoom.style.transition = ''; });
+        aplicarZoom();
+      }
+    }
+  });
+
+  // Ctrl+scroll en desktop
+  document.addEventListener('wheel', e => {
+    if (!e.ctrlKey) return;
+    e.preventDefault();
+    cambiarZoom(e.deltaY < 0 ? 1 : -1);
+  }, { passive: false });
+})();
+// .map-zoom es el elemento que efectivamente se escala (transform:scale).
+// .map-inner es la caja "de afuera" (sin transform) que .map-scroll usa para
+// calcular cuánto hay que poder scrollear. Se le fija su tamaño real en
+// píxeles ya multiplicado por la escala UNA sola vez por acá — así la escala
+// nunca se aplica dos veces (antes se aplicaba tanto al width/height como al
+// transform del mismo elemento, lo que inflaba el tamaño con cada zoom).
+function fixMapSize() {
+  const scale = getScale();
+  document.querySelectorAll('.map-inner').forEach(inner => {
+    const zoom = inner.querySelector('.map-zoom');
+    if (!zoom) return;
+    const bg = zoom.querySelector('.map-bg');
+    if (!zoom.dataset.nativeW) {
+      // Medir el tamaño real (sin escalar) UNA sola vez.
+      zoom.dataset.nativeW = Math.max(zoom.scrollWidth,  bg?parseInt(bg.getAttribute('width')):0);
+      zoom.dataset.nativeH = Math.max(zoom.scrollHeight, bg?parseInt(bg.getAttribute('height')):0);
+    }
+    const w = parseFloat(zoom.dataset.nativeW);
+    const h = parseFloat(zoom.dataset.nativeH);
+    inner.style.width  = (w*scale)+'px';
+    inner.style.height = (h*scale)+'px';
+  });
+}
+function centerMap() {
+  document.querySelectorAll('.map-scroll').forEach(container => {
+    const inner=container.querySelector('.map-inner'); if(!inner) return;
+    // inner.scrollWidth ya está en tamaño final (fixMapSize lo fija con la
+    // escala incluida), no hay que volver a multiplicar por scale acá.
+    const cw=inner.scrollWidth;
+    inner.style.marginLeft=cw<container.clientWidth?(container.clientWidth-cw)/2+'px':'0px';
+  });
+}
+
+// ── MINI-MAPA ─────────────────────────────────────────────────────────────
+// Miniatura con un punto por stand (coloreado según estado) + un recuadro que
+// muestra qué porción del mapa real se está viendo. Tocar la miniatura
+// scrollea el mapa real hasta esa zona.
+const MINIMAP_COLOR = { Pagado: '#30d158', 'Señado': '#ffd60a', Excedido: '#ff6b2b' };
+
+function buildMinimap() {
+  const data   = currentFloor === 'pb' ? FULL_DATA.pbData : FULL_DATA.paData;
+  const dotsEl = document.getElementById('minimapDots');
+  const mmEl   = document.getElementById('minimap');
+  if (!data || !dotsEl || !mmEl) return;
+
+  const stands = Object.values(data);
+  if (!stands.length) { dotsEl.innerHTML = ''; mmEl.classList.remove('visible'); return; }
+
+  const rows = stands.map(s=>s.r), cols = stands.map(s=>s.c);
+  const minR = Math.min(...rows), maxR = Math.max(...rows);
+  const minC = Math.min(...cols), maxC = Math.max(...cols);
+  const spanR = Math.max(1, maxR - minR), spanC = Math.max(1, maxC - minC);
+
+  dotsEl.innerHTML = stands.map(s => {
+    const left  = ((s.c - minC) / spanC) * 100;
+    const top   = ((s.r - minR) / spanR) * 100;
+    const color = MINIMAP_COLOR[s.e];
+    const style = color
+      ? `background:${color}`
+      : `background:#fff;border:1px solid #c7c7cc`; // Disponible
+    return `<div class="minimap-dot" style="left:${left}%;top:${top}%;${style}"></div>`;
+  }).join('');
+
+  mmEl.classList.add('visible');
+  updateMinimapViewport();
+}
+
+function updateMinimapViewport() {
+  const floorEl = document.getElementById(`floor-${currentFloor}`);
+  const vpEl    = document.getElementById('minimapViewport');
+  if (!floorEl || !vpEl) return;
+  const scrollEl = floorEl.querySelector('.map-scroll');
+  if (!scrollEl) return;
+
+  const totalW = scrollEl.scrollWidth, totalH = scrollEl.scrollHeight;
+  if (!totalW || !totalH) return;
+
+  const leftPct = Math.min(100, (scrollEl.scrollLeft / totalW) * 100);
+  const topPct  = Math.min(100, (scrollEl.scrollTop  / totalH) * 100);
+  const wPct    = Math.min(100 - leftPct, (scrollEl.clientWidth  / totalW) * 100);
+  const hPct    = Math.min(100 - topPct,  (scrollEl.clientHeight / totalH) * 100);
+
+  vpEl.style.left   = leftPct + '%';
+  vpEl.style.top    = topPct  + '%';
+  vpEl.style.width  = wPct    + '%';
+  vpEl.style.height = hPct    + '%';
+}
+
+function minimapJump(e) {
+  const mmEl    = document.getElementById('minimap');
+  const floorEl = document.getElementById(`floor-${currentFloor}`);
+  if (!mmEl || !floorEl) return;
+  const scrollEl = floorEl.querySelector('.map-scroll');
+  if (!scrollEl) return;
+
+  const rect = mmEl.getBoundingClientRect();
+  const px = (e.clientX - rect.left) / rect.width;
+  const py = (e.clientY - rect.top)  / rect.height;
+
+  const totalW = scrollEl.scrollWidth, totalH = scrollEl.scrollHeight;
+  const targetLeft = px * totalW - scrollEl.clientWidth  / 2;
+  const targetTop  = py * totalH - scrollEl.clientHeight / 2;
+
+  scrollEl.scrollTo({
+    left: Math.max(0, Math.min(totalW - scrollEl.clientWidth,  targetLeft)),
+    top:  Math.max(0, Math.min(totalH - scrollEl.clientHeight, targetTop)),
+    behavior: 'smooth'
+  });
+}
+
+// Mantener el recuadro del mini-mapa sincronizado con el scroll real del mapa
+let minimapRaf = null;
+function scheduleMinimapViewportUpdate() {
+  if (minimapRaf) return;
+  minimapRaf = requestAnimationFrame(() => { minimapRaf = null; updateMinimapViewport(); });
+}
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.map-scroll').forEach(el => {
+    el.addEventListener('scroll', scheduleMinimapViewportUpdate, { passive: true });
+  });
+  window.addEventListener('resize', scheduleMinimapViewportUpdate);
+});
+// ── BIOMÉTRICO (WebAuthn) ────────────────────────────────────────────────────
+const BIO_STORAGE_KEY = 'feriaBioCredential'; // { user, perfil, credentialId (base64) }
+
+function esCelular() {
+  return navigator.maxTouchPoints > 1 && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
+function bioDisponible() {
+  return esCelular() && !!(window.PublicKeyCredential &&
+    typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === 'function');
+}
+
+// Convierte ArrayBuffer → base64url y viceversa
+function ab2b64(buf) {
+  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+function b642ab(str) {
+  str = str.replace(/-/g,'+').replace(/_/g,'/');
+  while (str.length % 4) str += '=';
+  const bin = atob(str);
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  return buf.buffer;
+}
+
+async function registrarBiometrico(user, perfil) {
+  if (!bioDisponible()) return;
+  try {
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    const userId    = new TextEncoder().encode(user);
+    const cred = await navigator.credentials.create({ publicKey: {
+      challenge,
+      rp: { name: 'Feria Septiembre 2026' },
+      user: { id: userId, name: user, displayName: user },
+      pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+      authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
+      timeout: 60000
+    }});
+    // Guardamos el credentialId para verificar después
+    localStorage.setItem(BIO_STORAGE_KEY, JSON.stringify({
+      user, perfil, credentialId: ab2b64(cred.rawId)
+    }));
+    mostrarBtnBio();
+  } catch(e) {
+    // Si el usuario cancela o el dispositivo no lo soporta, no pasa nada
+  }
+}
+
+async function loginConBiometrico() {
+  const saved = JSON.parse(localStorage.getItem(BIO_STORAGE_KEY) || 'null');
+  if (!saved) return;
+  const errEl = document.getElementById('loginError');
+  const btn   = document.getElementById('bioBtn');
+  errEl.textContent = '';
+  btn.disabled = true;
+  btn.textContent = 'Verificando...';
+  try {
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    await navigator.credentials.get({ publicKey: {
+      challenge,
+      allowCredentials: [{ type: 'public-key', id: b642ab(saved.credentialId) }],
+      userVerification: 'required',
+      timeout: 60000
+    }});
+    // Verificación local exitosa → activar sesión directamente
+    sessionStorage.setItem('feriaUser',   saved.user);
+    sessionStorage.setItem('feriaPerfil', String(saved.perfil));
+    activarSesion(saved.user, saved.perfil);
+  } catch(e) {
+    // Si cancela o falla, mostrar el formulario normal para entrar con contraseña
+    errEl.textContent = 'Verificación cancelada. Ingresá con tu contraseña.';
+    btn.disabled = false;
+    btn.innerHTML = '<span style="font-size:20px">🪪</span> Entrar sin contraseña';
+    // Cargar el combo de usuarios si todavía no se cargó
+    const sel = document.getElementById('loginUser');
+    if (sel.options.length <= 1 && sel.options[0]?.value === '') {
+      try {
+        const res  = await fetch(API_URL + '?tipo=usuarios');
+        const data = await res.json();
+        if (data.ok && data.usuarios.length) {
+          sel.innerHTML = '<option value="">— Elegí tu usuario —</option>' +
+            data.usuarios.map(u => `<option value="${u.nombre}">${u.nombre}</option>`).join('');
+          VENDEDORES_LIST = data.usuarios
+            .filter(u => u.perfil === 1)
+            .map(u => u.nombre);
+        }
+      } catch(err) {
+        sel.innerHTML = '<option value="">Error de conexión</option>';
+      }
+    }
+  }
+}
+
+function mostrarBtnBio() {
+  if (!bioDisponible()) return;
+  const saved = localStorage.getItem(BIO_STORAGE_KEY);
+  if (saved) document.getElementById('bioBtnWrap').style.display = 'block';
+}
+
+// ── LOGIN ────────────────────────────────────────────────────────────────────
+let CURRENT_USER   = null;
+let CURRENT_PERFIL = 1;   // 1=VENDEDOR, 2=VISUALIZADOR, 3=ADMIN
+
+async function initLogin() {
+  // ¿Ya hay sesión activa?
+  const saved = sessionStorage.getItem('feriaUser');
+  if (saved) {
+    const savedPerfil = parseInt(sessionStorage.getItem('feriaPerfil') || '1', 10) || 1;
+    activarSesion(saved, savedPerfil);
+    return;
+  }
+  // ¿Hay credencial biométrica guardada? → disparar directo, sin pedir contraseña
+  if (bioDisponible() && localStorage.getItem(BIO_STORAGE_KEY)) {
+    mostrarBtnBio();
+    loginConBiometrico(); // si el usuario cancela, queda el botón + el form abajo
+    return;
+  }
+  // Cargar lista de usuarios para el combo del login
+  try {
+    const res  = await fetch(API_URL + '?tipo=usuarios');
+    const data = await res.json();
+    const sel  = document.getElementById('loginUser');
+    if (data.ok && data.usuarios.length) {
+      // Poblar combo de login solo con los nombres
+      sel.innerHTML = '<option value="">— Elegí tu usuario —</option>' +
+        data.usuarios.map(u => `<option value="${u.nombre}">${u.nombre}</option>`).join('');
+      // Reutilizar estos mismos datos para VENDEDORES_LIST, así load()
+      // no vuelve a pedir "tipo=usuarios" un segundo después
+      VENDEDORES_LIST = data.usuarios
+        .filter(u => u.perfil === 1)
+        .map(u => u.nombre);
+    } else {
+      sel.innerHTML = '<option value="">Error al cargar usuarios</option>';
+    }
+  } catch(err) {
+    document.getElementById('loginUser').innerHTML = '<option value="">Error de conexión</option>';
+  }
+  mostrarBtnBio();
+  // Nota: si la sesión se restaura desde sessionStorage (arriba), este bloque
+  // nunca corre y VENDEDORES_LIST sigue vacío — en ese caso load() sí lo pide.
+}
+
+async function doLogin() {
+  const user = document.getElementById('loginUser').value.trim();
+  const pass = document.getElementById('loginPass').value.trim();
+  const errEl = document.getElementById('loginError');
+  const btn   = document.getElementById('loginBtn');
+
+  errEl.textContent = '';
+  if (!user) { errEl.textContent = 'Seleccioná un usuario'; return; }
+  if (!pass) { errEl.textContent = 'Ingresá tu contraseña'; return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Verificando...';
+  try {
+    const res  = await fetch(`${API_URL}?tipo=login&user=${encodeURIComponent(user)}&pass=${encodeURIComponent(pass)}`);
+    const data = await res.json();
+    if (data.ok) {
+      const perfil = data.perfil || 1;
+      sessionStorage.setItem('feriaUser',   data.user);
+      sessionStorage.setItem('feriaPerfil', String(perfil));
+      // Ofrecer guardar biométrico si el dispositivo lo soporta y aún no está registrado
+      if (bioDisponible() && !localStorage.getItem(BIO_STORAGE_KEY)) {
+        registrarBiometrico(data.user, perfil); // no bloqueante
+      }
+      activarSesion(data.user, perfil);
+    } else {
+      errEl.textContent = data.error || 'Usuario o contraseña incorrectos';
+    }
+  } catch(err) {
+    errEl.textContent = 'Error de conexión. Intentá de nuevo.';
+  }
+  btn.disabled = false;
+  btn.textContent = 'Ingresar';
+}
+
+function activarSesion(user, perfil) {
+  CURRENT_USER   = user;
+  CURRENT_PERFIL = perfil || 1;
+  document.getElementById('loginScreen').classList.add('hidden');
+  document.getElementById('userPillName').textContent = user;
+  const avatarEl = document.getElementById('userPillAvatar');
+  if (avatarEl) avatarEl.textContent = (user || '?').charAt(0).toUpperCase();
+  // Mostrar badge de perfil en la píldora de usuario
+  const pillEl = document.getElementById('userPill');
+  pillEl.style.display = 'inline-flex';
+  const perfilBadge = document.getElementById('userPerfilBadge');
+  if (perfilBadge) {
+    if (CURRENT_PERFIL === 2) {
+      perfilBadge.textContent = '👁 VISUALIZADOR';
+      perfilBadge.style.display = 'inline';
+    } else if (CURRENT_PERFIL === 3) {
+      perfilBadge.textContent = '🔑 ADMIN';
+      perfilBadge.style.display = 'inline';
+    } else {
+      perfilBadge.textContent = '';
+      perfilBadge.style.display = 'none';
+    }
+  }
+  load(); // carga el mapa recién después del login
+}
+
+function cerrarSesion() {
+  if (!confirm('¿Cerrar sesión?')) return;
+  sessionStorage.removeItem('feriaUser');
+  sessionStorage.removeItem('feriaPerfil');
+  location.reload();
+}
+
+// ── PAGOS ────────────────────────────────────────────────────────────────────
+let MEDIOS_PAGO = [];
+let pagoNumActual = 0;
+
+async function cargarMediosPago() {
+  if (MEDIOS_PAGO.length) return;
+  try {
+    const res  = await fetch(`${API_URL}?tipo=medios`);
+    const data = await res.json();
+    if (data.ok && data.medios) MEDIOS_PAGO = data.medios;
+  } catch(e) { MEDIOS_PAGO = []; }
+}
+
+function formatFecha(val) {
+  if (!val) return '';
+  if (typeof val === 'string' && /^\d{2}\/\d{2}\/\d{2,4}/.test(val)) return val;
+  const d = new Date(val);
+  if (isNaN(d)) return String(val);
+  const dd   = String(d.getDate()).padStart(2,'0');
+  const mm   = String(d.getMonth()+1).padStart(2,'0');
+  const aaaa = d.getFullYear();
+  const hh   = String(d.getHours()).padStart(2,'0');
+  const min  = String(d.getMinutes()).padStart(2,'0');
+  return `${dd}/${mm}/${aaaa} ${hh}:${min}`;
+}
+
+function renderPagos(extra, soloHechos) {
+  const pagos = [
+    { num:1, monto:extra.p1m, fecha:extra.p1f, resp:extra.p1r, medio:extra.p1med },
+    { num:2, monto:extra.p2m, fecha:extra.p2f, resp:extra.p2r, medio:extra.p2med },
+    { num:3, monto:extra.p3m, fecha:extra.p3f, resp:extra.p3r, medio:extra.p3med },
+  ];
+  const listEl = document.getElementById('pagosList');
+  const paraMostrar = soloHechos
+    ? pagos.filter(p => p.monto !== undefined && p.monto !== null && p.monto !== '' && Number(p.monto) > 0)
+    : pagos;
+  listEl.innerHTML = paraMostrar.map(p => {
+    const cargado = p.monto !== undefined && p.monto !== null && p.monto !== '' && Number(p.monto) > 0;
+    const fechaFmt = formatFecha(p.fecha);
+    return `<div class="pago-item ${cargado ? 'cargado' : ''}">
+      <div class="pago-num">${p.num}</div>
+      <div class="pago-info">
+        <div class="pago-estado">${cargado ? 'Pagado' : 'Pendiente'}</div>
+        ${cargado ? `<div class="pago-detalle">${fechaFmt}${p.resp ? ' · '+p.resp : ''}${p.medio ? ' · '+p.medio : ''}</div>` : ''}
+      </div>
+      ${cargado ? `<div class="pago-monto">$${Number(p.monto).toLocaleString('es-AR')}</div>` : ''}
+    </div>`;
+  }).join('');
+
+  const siguiente = pagos.find(p => !(p.monto !== undefined && p.monto !== null && p.monto !== '' && Number(p.monto) > 0));
+  const pagoForm  = document.getElementById('pagoForm');
+  const pagoMsg   = document.getElementById('pagoMsg');
+  pagoMsg.textContent = '';
+  pagoMsg.className   = 'pago-msg';
+  // VISUALIZADOR: solo ve el historial de pagos, sin formulario
+  if (CURRENT_PERFIL === 2) { pagoForm.style.display = 'none'; return; }
+  if (!siguiente) { pagoForm.style.display = 'none'; return; }
+  pagoNumActual = siguiente.num;
+  document.getElementById('pagoFormTitle').textContent = `Cargar Pago ${siguiente.num}`;
+  document.getElementById('pagoMonto').value = '';
+  pagoForm.style.display = 'flex';
+  cargarMediosPago().then(() => {
+    const sel = document.getElementById('pagoMedio');
+    if (MEDIOS_PAGO.length) {
+      sel.innerHTML = '<option value="">— Elegí medio —</option>' +
+        MEDIOS_PAGO.map(m => `<option value="${m}">${m}</option>`).join('');
+    } else {
+      sel.innerHTML = '<option value="">Sin medios cargados</option>';
+    }
+    // Combo vendedor: solo para Admin
+    const vendedorGroup = document.getElementById('pagoVendedorGroup');
+    const vendedorSel   = document.getElementById('pagoVendedor');
+    if (CURRENT_PERFIL === 3 && VENDEDORES_LIST.length) {
+      vendedorGroup.style.display = 'block';
+      vendedorSel.innerHTML = '<option value="">— Elegí vendedor —</option>' +
+        VENDEDORES_LIST.map(v => `<option value="${v}">${v}</option>`).join('');
+    } else {
+      vendedorGroup.style.display = 'none';
+    }
+  });
+}
+
+async function cargarPago() {
+  const btn   = document.getElementById('pagoBtn');
+  const msgEl = document.getElementById('pagoMsg');
+  const monto = Number(document.getElementById('pagoMonto').value);
+  const medio = document.getElementById('pagoMedio').value.trim();
+  const extra = (FULL_DATA.extraData||{})[currentStandId] || {};
+  const debe  = Number(extra.d || 0);
+  msgEl.textContent = '';
+  msgEl.className   = 'pago-msg';
+  if (!monto || monto <= 0) { msgEl.textContent = 'Ingresá un monto válido.'; msgEl.className='pago-msg err'; return; }
+  if (monto > debe)         { msgEl.textContent = `El monto no puede superar el Debe ($${debe.toLocaleString('es-AR')}).`; msgEl.className='pago-msg err'; return; }
+  if (!medio)               { msgEl.textContent = 'Seleccioná un medio de pago.'; msgEl.className='pago-msg err'; return; }
+
+  // Vendedor: si Admin, puede elegir en nombre de quién registra
+  let vendedor = '';
+  if (CURRENT_PERFIL === 3) {
+    vendedor = (document.getElementById('pagoVendedor').value || '').trim();
+    if (!vendedor) { msgEl.textContent = 'Seleccioná el vendedor en nombre del cual registrás el pago.'; msgEl.className='pago-msg err'; return; }
+  }
+
+  if (!currentStandId)      return;
+  setBtnBusy(btn, 'Guardando...');
+  try {
+    const vendedorParam = vendedor ? `&vendedor=${encodeURIComponent(vendedor)}` : '';
+    const url  = `${API_URL}?tipo=pago&stand=${encodeURIComponent(currentStandId)}&num=${pagoNumActual}&monto=${monto}&medio=${encodeURIComponent(medio)}&user=${encodeURIComponent(CURRENT_USER)}${vendedorParam}`;
+    const res  = await fetch(url);
+    const data = await res.json();
+    if (data.ok) {
+      if (!FULL_DATA.extraData[currentStandId]) FULL_DATA.extraData[currentStandId] = {};
+      const ex  = FULL_DATA.extraData[currentStandId];
+      const k   = `p${pagoNumActual}`;
+      const responsableLocal = (CURRENT_PERFIL === 3)
+        ? (document.getElementById('pagoVendedor').value || CURRENT_USER)
+        : CURRENT_USER;
+      ex[`${k}m`]   = monto;
+      ex[`${k}f`]   = formatFecha(new Date());
+      ex[`${k}r`]   = responsableLocal;
+      ex[`${k}med`] = medio;
+      ex.d          = Math.max(0, (Number(ex.d)||0) - monto);
+      document.getElementById('modalDebe').textContent = `$${ex.d.toLocaleString('es-AR')}`;
+      document.getElementById('modalDebeBox').className = 'money-box ' + (ex.d > 0 ? 'debe-mal' : 'debe-ok');
+
+      if (ex.d === 0) {
+        // Deuda saldada: bloquear modal, recargar mapa y recién cerrar.
+        // Acá sí conviene el overlay completo (se recarga el mapa entero).
+        msgEl.textContent = `✅ Pago ${pagoNumActual} registrado. Stand Pagado. Actualizando mapa...`;
+        msgEl.className   = 'pago-msg ok';
+        setBtnBusy(btn, 'Actualizando mapa...');
+        lockModal('Actualizando mapa...');
+        await load();
+        document.getElementById('modalOverlay').classList.remove('open');
+        unlockModal();
+      } else {
+        // Aún debe: actualizar la UI del modal normalmente
+        clearBtnBusy(btn, 'Registrar pago');
+        msgEl.textContent = '';
+        msgEl.className   = 'pago-msg';
+        showToast(`✅ Pago ${pagoNumActual} registrado`);
+        setTimeout(() => { renderPagos(ex); }, 1200);
+        return;
+      }
+    } else {
+      clearBtnBusy(btn, 'Registrar pago');
+      msgEl.textContent = data.error || 'Error al guardar el pago.';
+      msgEl.className   = 'pago-msg err';
+      return;
+    }
+  } catch(err) {
+    clearBtnBusy(btn, 'Registrar pago');
+    msgEl.textContent = 'Error de conexión.';
+    msgEl.className   = 'pago-msg err';
+    return;
+  }
+  btn.disabled    = false;
+  btn.textContent = 'Registrar pago';
+}
+
+// ── ALTA FERIANTE ─────────────────────────────────────────────────────────────
+function openAltaPanel() {
+  // Limpiar formulario
+  ['altaNombre','altaRubro','altaCelular','altaEmail','altaIG','altaDNI'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('altaTipo').value = '';
+  document.getElementById('altaMsg').textContent = '';
+  document.getElementById('altaMsg').className = 'alta-msg';
+  document.getElementById('altaRubroHint').textContent = 'Máximo 60 caracteres';
+  document.getElementById('altaRubroHint').className = 'alta-hint';
+  document.getElementById('altaBtn').disabled = false;
+  // Mostrar panel
+  document.getElementById('mainPanel').classList.add('hidden');
+  document.getElementById('mobPanel').classList.remove('active');
+  document.getElementById('altaPanel').classList.add('active');
+}
+
+function closeAltaPanel() {
+  document.getElementById('altaPanel').classList.remove('active');
+  document.getElementById('mainPanel').classList.remove('hidden');
+}
+
+// Contador de caracteres en Rubro
+document.addEventListener('DOMContentLoaded', () => {
+  const rubroInput = document.getElementById('altaRubro');
+  if (rubroInput) {
+    rubroInput.addEventListener('input', () => {
+      const len = rubroInput.value.length;
+      const hint = document.getElementById('altaRubroHint');
+      hint.textContent = `${len}/60 caracteres`;
+      hint.className = len > 60 ? 'alta-hint err-hint' : 'alta-hint';
+    });
+  }
+});
+
+async function guardarNuevoFeriante() {
+  const msgEl  = document.getElementById('altaMsg');
+  const btn    = document.getElementById('altaBtn');
+  msgEl.textContent = '';
+  msgEl.className   = 'alta-msg';
+
+  const nombre  = document.getElementById('altaNombre').value.trim();
+  const tipo    = document.getElementById('altaTipo').value.trim();
+  const rubro   = document.getElementById('altaRubro').value.trim();
+  const celular = document.getElementById('altaCelular').value.trim();
+  const email   = document.getElementById('altaEmail').value.trim();
+  const ig      = document.getElementById('altaIG').value.trim();
+  const dni     = document.getElementById('altaDNI').value.trim();
+
+  // Validaciones
+  if (!nombre) { msgEl.textContent = 'El Nombre y Apellido es obligatorio.'; msgEl.className = 'alta-msg err'; return; }
+  if (!tipo)   { msgEl.textContent = 'Seleccioná el Tipo.'; msgEl.className = 'alta-msg err'; return; }
+  if (!rubro)  { msgEl.textContent = 'El Rubro es obligatorio.'; msgEl.className = 'alta-msg err'; return; }
+  if (rubro.length > 60) { msgEl.textContent = 'El Rubro no puede superar 60 caracteres.'; msgEl.className = 'alta-msg err'; return; }
+  if (!celular) { msgEl.textContent = 'El Celular es obligatorio.'; msgEl.className = 'alta-msg err'; return; }
+  if (!/^\d{8,12}$/.test(celular)) { msgEl.textContent = 'El celular debe tener solo números (Ej: 1158585858).'; msgEl.className = 'alta-msg err'; return; }
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { msgEl.textContent = 'El Email no tiene un formato válido.'; msgEl.className = 'alta-msg err'; return; }
+
+  btn.disabled    = true;
+  btn.textContent = 'Guardando...';
+
+  try {
+    const params = new URLSearchParams({
+      tipo:    'altaferiante',
+      nombre,
+      tipof:   tipo,
+      rubro,
+      celular,
+      email,
+      ig,
+      dni,
+      user:    CURRENT_USER
+    });
+    const res  = await fetch(`${API_URL}?${params.toString()}`);
+    const data = await res.json();
+
+    if (data.ok) {
+      // Agregar a la lista local y reordenar
+      if (!FERIANTES_LIST.includes(nombre)) {
+        FERIANTES_LIST.push(nombre);
+        FERIANTES_LIST.sort((a, b) => a.localeCompare(b, 'es'));
+      }
+      msgEl.textContent = '';
+      msgEl.className   = 'alta-msg';
+      showToast(`✅ ${nombre} dado de alta`);
+      // Volver al panel principal y preseleccionar al nuevo feriante
+      setTimeout(() => {
+        closeAltaPanel();
+        selectFeriante(nombre, true);
+      }, 1200);
+    } else {
+      msgEl.textContent = data.error || 'Error al dar de alta el feriante.';
+      msgEl.className   = 'alta-msg err';
+      btn.disabled    = false;
+      btn.textContent = 'Guardar feriante';
+    }
+  } catch(err) {
+    msgEl.textContent = 'Error de conexión.';
+    msgEl.className   = 'alta-msg err';
+    btn.disabled    = false;
+    btn.textContent = 'Guardar feriante';
+  }
+}
+
+// ── MOBILIARIO ──────────────────────────────────────────────────────────────
+const MOB_ITEMS = [
+  { key:'mob_mesa',  label:'Mesa' },
+  { key:'mob_pd',    label:'Pupitre Doble' },
+  { key:'mob_ps',    label:'Pupitre Simple' },
+  { key:'mob_silla', label:'Silla' },
+  { key:'mob_c2pds', label:'Combo: 2 Pupitres Dobles + Silla' },
+  { key:'mob_cms',   label:'Combo: Mesa + Silla' },
+  { key:'mob_c2pss', label:'Combo: 2 Pupitres Simples + Silla' },
+];
+
+// Cantidades seleccionadas en el panel (se resetean al abrir modal)
+let mobQty = {};
+
+function resetMobQty() {
+  mobQty = {};
+  MOB_ITEMS.forEach(m => { mobQty[m.key] = 0; });
+}
+
+// Calcula precio base del stand + mobiliario seleccionado
+function calcTotalConMob() {
+  const extra     = (FULL_DATA.extraData||{})[currentStandId] || {};
+  const precioBase = Number(extra.pr || 0);
+  const precioMob  = MOB_ITEMS.reduce((sum, m) => {
+    const qty   = mobQty[m.key] || 0;
+    const price = PRECIOS_MOB[m.label] || 0;
+    return sum + qty * price;
+  }, 0);
+  return { base: precioBase, mob: precioMob, total: precioBase + precioMob };
+}
+
+// Actualiza los boxes de Total y Debe en el modal con el nuevo total
+function updatePrecioModal() {
+  const data  = (FULL_DATA.pbData||{})[currentStandId] || (FULL_DATA.paData||{})[currentStandId] || {};
+  if ((data.e || 'Disponible') !== 'Disponible') return;
+
+  const { base, mob, total } = calcTotalConMob();
+  if (total === 0) return;
+
+  const moneyEl = document.getElementById('modalMoney');
+  moneyEl.style.display = 'flex';
+
+  // Total: precio base + mobiliario
+  const totalEl = document.getElementById('modalTotal');
+  if (mob > 0) {
+    totalEl.innerHTML = `$${total.toLocaleString('es-AR')} <span style="font-size:11px;font-weight:500;color:#64748b;display:block">Stand $${base.toLocaleString('es-AR')} + Mob $${mob.toLocaleString('es-AR')}</span>`;
+  } else {
+    totalEl.textContent = `$${total.toLocaleString('es-AR')}`;
+  }
+
+  // Debe: igual al total (en stand disponible todavía no pagó nada)
+  document.getElementById('modalDebe').textContent = `$${total.toLocaleString('es-AR')}`;
+  document.getElementById('modalDebeBox').className = 'money-box debe-mal';
+
+  // También actualizar el límite de validación del monto de seña
+  const assignMonto = document.getElementById('assignMonto');
+  if (assignMonto) assignMonto.dataset.maxPrecio = total;
+  checkAssignBtn();
+}
+
+function openMobPanel() {
+  // Construir la lista de contadores con precio por ítem si está disponible
+  const list = document.getElementById('mobList');
+  list.innerHTML = MOB_ITEMS.map(m => {
+    const precio = PRECIOS_MOB[m.label];
+    const precioStr = precio ? `<span style="font-size:12px;color:#64748b;font-weight:500">$${precio.toLocaleString('es-AR')}</span>` : '';
+    return `
+    <div class="mob-item">
+      <div class="mob-item-name">${m.label} ${precioStr}</div>
+      <div class="mob-counter">
+        <button class="mob-btn minus" onclick="changeMobQty('${m.key}',-1)">−</button>
+        <span class="mob-qty" id="mqty_${m.key}">${mobQty[m.key]||0}</span>
+        <button class="mob-btn" onclick="changeMobQty('${m.key}',1)">+</button>
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('mainPanel').classList.add('hidden');
+  document.getElementById('altaPanel').classList.remove('active');
+  document.getElementById('mobPanel').classList.add('active');
+}
+
+function closeMobPanel() {
+  document.getElementById('mobPanel').classList.remove('active');
+  document.getElementById('mainPanel').classList.remove('hidden');
+  updateMobSummary();
+  updatePrecioModal();   // ← recalcular precio al confirmar mobiliario
+}
+
+function changeMobQty(key, delta) {
+  mobQty[key] = Math.max(0, (mobQty[key]||0) + delta);
+  const el = document.getElementById('mqty_' + key);
+  if (el) el.textContent = mobQty[key];
+}
+
+function updateMobSummary() {
+  const items = MOB_ITEMS.filter(m => mobQty[m.key] > 0);
+  const summaryEl = document.getElementById('mobSummary');
+  const summaryTxt = document.getElementById('mobSummaryText');
+  const btnLabel = document.getElementById('mobBtnLabel');
+  if (items.length === 0) {
+    summaryEl.classList.remove('visible');
+    btnLabel.textContent = '';
+  } else {
+    const txt = items.map(m => `${m.label} ×${mobQty[m.key]}`).join(' · ');
+    summaryTxt.textContent = txt;
+    summaryEl.classList.add('visible');
+    btnLabel.textContent = `(${items.length} tipo${items.length>1?'s':''})`;
+  }
+}
+
+function renderMobReadonly(extra) {
+  const items = MOB_ITEMS.filter(m => Number(extra[m.key]||0) > 0);
+  const section = document.getElementById('mobReadonly');
+  const container = document.getElementById('mobReadonlyItems');
+  if (items.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = 'block';
+  container.innerHTML = items
+    .map(m => `<span class="mob-readonly-chip">${m.label} ×${extra[m.key]}</span>`)
+    .join('');
+}
+
+// ── MOBILIARIO ADICIONAL (stands Pagados, perfil 1) ──────────────────────────
+let mobAdicionalQty = {};
+
+function resetMobAdicionalQty() {
+  mobAdicionalQty = {};
+  MOB_ITEMS.forEach(m => { mobAdicionalQty[m.key] = 0; });
+}
+
+function resetMobAdicionalUI() {
+  resetMobAdicionalQty();
+  document.getElementById('mobAdicionalSummary').classList.remove('visible');
+  document.getElementById('mobAdicionalSummaryText').textContent = '';
+  document.getElementById('mobAdicionalTotal').textContent = '';
+  document.getElementById('mobAdicionalBtnLabel').textContent = '';
+  document.getElementById('mobAdicionalMonto').value = '';
+  document.getElementById('mobAdicionalMsg').textContent = '';
+  document.getElementById('mobAdicionalMsg').className = 'mob-adicional-msg';
+  document.getElementById('mobAdicionalBtn').disabled = true;
+  // Arranca siempre colapsado
+  setAcc('mobAdicionalHeader', 'mobAdicionalBody', false);
+  cargarMediosPago().then(() => {
+    const sel = document.getElementById('mobAdicionalMedio');
+    if (MEDIOS_PAGO.length) {
+      sel.innerHTML = '<option value="">— Elegí medio —</option>' +
+        MEDIOS_PAGO.map(m => `<option value="${m}">${m}</option>`).join('');
+    } else {
+      sel.innerHTML = '<option value="">Sin medios cargados</option>';
+    }
+  });
+}
+
+function calcTotalMobAdicional() {
+  return MOB_ITEMS.reduce((sum, m) => {
+    const qty   = mobAdicionalQty[m.key] || 0;
+    const price = PRECIOS_MOB[m.label] || 0;
+    return sum + qty * price;
+  }, 0);
+}
+
+function openMobAdicionalPanel() {
+  const list = document.getElementById('mobAdicionalList');
+  list.innerHTML = MOB_ITEMS.map(m => {
+    const precio = PRECIOS_MOB[m.label];
+    const precioStr = precio ? `<span style="font-size:12px;color:#64748b;font-weight:500">$${precio.toLocaleString('es-AR')}</span>` : '';
+    return `
+    <div class="mob-item">
+      <div class="mob-item-name">${m.label} ${precioStr}</div>
+      <div class="mob-counter">
+        <button class="mob-btn minus" onclick="changeMobAdicionalQty('${m.key}',-1)">−</button>
+        <span class="mob-qty" id="maqty_${m.key}">${mobAdicionalQty[m.key]||0}</span>
+        <button class="mob-btn" onclick="changeMobAdicionalQty('${m.key}',1)">+</button>
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('mainPanel').classList.add('hidden');
+  document.getElementById('mobAdicionalPanel').classList.add('active');
+}
+
+function closeMobAdicionalPanel() {
+  document.getElementById('mobAdicionalPanel').classList.remove('active');
+  document.getElementById('mainPanel').classList.remove('hidden');
+  updateMobAdicionalSummary();
+}
+
+function changeMobAdicionalQty(key, delta) {
+  mobAdicionalQty[key] = Math.max(0, (mobAdicionalQty[key]||0) + delta);
+  const el = document.getElementById('maqty_' + key);
+  if (el) el.textContent = mobAdicionalQty[key];
+}
+
+function updateMobAdicionalSummary() {
+  const items = MOB_ITEMS.filter(m => mobAdicionalQty[m.key] > 0);
+  const summaryEl  = document.getElementById('mobAdicionalSummary');
+  const summaryTxt = document.getElementById('mobAdicionalSummaryText');
+  const totalEl    = document.getElementById('mobAdicionalTotal');
+  const btnLabel   = document.getElementById('mobAdicionalBtnLabel');
+  const montoInput = document.getElementById('mobAdicionalMonto');
+  if (items.length === 0) {
+    summaryEl.classList.remove('visible');
+    totalEl.textContent = '';
+    btnLabel.textContent = '';
+    montoInput.value = '';
+  } else {
+    const txt   = items.map(m => `${m.label} ×${mobAdicionalQty[m.key]}`).join(' · ');
+    const total = calcTotalMobAdicional();
+    summaryTxt.textContent = txt;
+    totalEl.textContent    = total > 0 ? `Total: $${total.toLocaleString('es-AR')}` : '';
+    summaryEl.classList.add('visible');
+    btnLabel.textContent = `(${items.length} tipo${items.length>1?'s':''})`;
+    montoInput.value = total > 0 ? total : '';
+  }
+  checkMobAdicionalBtn();
+}
+
+function checkMobAdicionalBtn() {
+  const total  = calcTotalMobAdicional();
+  const medio  = document.getElementById('mobAdicionalMedio').value.trim();
+  const msgEl  = document.getElementById('mobAdicionalMsg');
+  const btn    = document.getElementById('mobAdicionalBtn');
+
+  msgEl.textContent = '';
+  msgEl.className = 'mob-adicional-msg';
+  btn.disabled = !(total > 0 && medio);
+}
+
+async function venderMobAdicional() {
+  const btn    = document.getElementById('mobAdicionalBtn');
+  const msgEl  = document.getElementById('mobAdicionalMsg');
+  const medio  = document.getElementById('mobAdicionalMedio').value.trim();
+  const total  = calcTotalMobAdicional();
+  const items  = MOB_ITEMS.filter(m => mobAdicionalQty[m.key] > 0);
+
+  msgEl.textContent = '';
+  msgEl.className = 'mob-adicional-msg';
+
+  if (items.length === 0) { msgEl.textContent = 'Seleccioná al menos un ítem de mobiliario.'; msgEl.className = 'mob-adicional-msg err'; return; }
+  if (total <= 0)         { msgEl.textContent = 'El total del mobiliario no puede ser cero.'; msgEl.className = 'mob-adicional-msg err'; return; }
+  if (!medio)             { msgEl.textContent = 'Seleccioná un medio de pago.'; msgEl.className = 'mob-adicional-msg err'; return; }
+  if (!currentStandId)    return;
+
+  setBtnBusy(btn, 'Guardando...');
+
+  // Armar descripción del mob para la leyenda
+  const mobDesc = items.map(m => `${mobAdicionalQty[m.key]}×${m.label}`).join(' + ');
+
+  try {
+    const mobParams = MOB_ITEMS.map(m => `${m.key}=${mobAdicionalQty[m.key]||0}`).join('&');
+    const url = `${API_URL}?tipo=mobadic&stand=${encodeURIComponent(currentStandId)}&monto=${total}&medio=${encodeURIComponent(medio)}&user=${encodeURIComponent(CURRENT_USER)}&mobdesc=${encodeURIComponent(mobDesc)}&${mobParams}`;
+    const res  = await fetch(url);
+    const data = await res.json();
+    if (data.ok) {
+      // Patch local: sumamos las cantidades vendidas al mobiliario ya
+      // cargado del stand, en vez de re-pedir el mapa entero.
+      if (!FULL_DATA.extraData) FULL_DATA.extraData = {};
+      if (!FULL_DATA.extraData[currentStandId]) FULL_DATA.extraData[currentStandId] = {};
+      const exMob = FULL_DATA.extraData[currentStandId];
+      MOB_ITEMS.forEach(m => {
+        const qty = mobAdicionalQty[m.key] || 0;
+        if (qty > 0) exMob[m.key] = (Number(exMob[m.key]) || 0) + qty;
+      });
+
+      msgEl.textContent = '';
+      msgEl.className = 'mob-adicional-msg';
+      showToast('✅ Mobiliario adicional registrado');
+      renderMapUI();
+      document.getElementById('modalOverlay').classList.remove('open');
     } else {
       clearBtnBusy(btn, 'Registrar venta de mobiliario');
       msgEl.textContent = data.error || 'Error al registrar el mobiliario adicional.';
