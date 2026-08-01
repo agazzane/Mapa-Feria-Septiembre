@@ -1264,12 +1264,19 @@ function renderMapUI() {
   const total = Object.keys(FULL_DATA.pbData).length + Object.keys(FULL_DATA.paData).length;
   const horaActualizacion = new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
   document.getElementById('subtitle').textContent = `${total} stands · Act. ${horaActualizacion}`;
-  // Igual que en switchFloor(): esperamos al próximo repintado real antes de
-  // medir/centrar el mapa. Si se hace sincrónico (como estaba antes), en la
-  // carga inicial el navegador puede no tener el layout final todavía
-  // (fuentes, scrollbar, etc.) y el cálculo de centrado sale mal —
-  // por eso la Planta Baja aparecía pegada a la izquierda al abrir.
-  requestAnimationFrame(() => requestAnimationFrame(() => { aplicarZoom(); buildMinimap(); }));
+  // Antes esperábamos solo 2 frames de repintado, pero si la fuente Inter
+  // (cargada por @import desde Google Fonts, con display:swap) todavía no
+  // está en caché, el "swap" de fuente puede tardar más que eso y correr
+  // los anchos justo después de medir — ahí quedaba mal centrado. Por eso
+  // esperamos primero a que las fuentes terminen de cargar del todo.
+  const centrarMapaInicial = () => {
+    requestAnimationFrame(() => requestAnimationFrame(() => { aplicarZoom(); buildMinimap(); }));
+  };
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(centrarMapaInicial).catch(centrarMapaInicial);
+  } else {
+    centrarMapaInicial();
+  }
 }
 
 async function load() {
@@ -2347,6 +2354,25 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   window.addEventListener('resize', scheduleMinimapViewportUpdate);
 });
+
+// Recentra el mapa automáticamente cada vez que cambia el tamaño del
+// contenedor (.map-scroll) — sin importar la causa: fuente que termina de
+// cargar, ventana que se maximiza/restaura, sidebar que aparece, etc.
+// Es la forma robusta de resolver el desalineo inicial en vez de tratar de
+// adivinar el momento exacto en que el layout ya está "listo".
+if (window.ResizeObserver) {
+  let _mapResizeRaf = null;
+  const _mapResizeObserver = new ResizeObserver(() => {
+    if (_mapResizeRaf) return;
+    _mapResizeRaf = requestAnimationFrame(() => { _mapResizeRaf = null; fixMapSize(); centerMap(); });
+  });
+  document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.map-scroll').forEach(el => _mapResizeObserver.observe(el));
+  });
+}
+// Pasada extra de seguridad: cuando TODO terminó de cargar (imágenes,
+// fuentes, todo), volvemos a centrar una vez más por las dudas.
+window.addEventListener('load', () => { aplicarZoom(); buildMinimap(); });
 // ── BIOMÉTRICO (WebAuthn) ────────────────────────────────────────────────────
 const BIO_STORAGE_KEY = 'feriaBioCredential'; // { user, perfil, credentialId (base64) }
 
