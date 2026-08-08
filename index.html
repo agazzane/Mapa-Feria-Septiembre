@@ -179,6 +179,7 @@
   .filter-btn.active                      { background: var(--text); color: white; border-color: var(--text); }
   .filter-btn#filtroMobBtn.active         { background: #0d9488; color: white; border-color: #0d9488; }
   .filter-btn#filtroDispBtn.active        { background: #5e5ce6; color: white; border-color: #5e5ce6; }
+  .filter-btn#filtroNoIngresadosBtn.active{ background: #d64545; color: white; border-color: #d64545; }
   .filter-btn.mis-ventas-btn.active       { background: var(--accent); color: white; border-color: var(--accent); }
 
   /* ── MAP ── */
@@ -536,6 +537,18 @@
   .mob-adicional-msg.ok  { color: #15803d; }
   .mob-adicional-msg.err { color: #ff3b30; }
 
+  /* ── INGRESO (solo Admin) ── */
+  .ingreso-section { margin-top: 14px; padding: 12px; background: var(--surface2); border-radius: var(--radius); border: 1px solid var(--border); }
+  .ingreso-btn { width: 100%; padding: 10px; background: #1a7f3c; color: white; border: none; border-radius: var(--radius-sm); font-size: 14px; font-weight: 600; font-family: var(--font); cursor: pointer; transition: background .18s; }
+  .ingreso-btn:active { background: #146830; }
+  .ingreso-btn:disabled { background: #a7d8b7; color: #0a3d1f; cursor: not-allowed; }
+  .ingreso-info { font-size: 13px; font-weight: 600; text-align: center; }
+  .ingreso-info.ok      { color: #15803d; }
+  .ingreso-info.pending { color: var(--text3); font-weight: 500; }
+  .ingreso-msg { font-size: 12px; font-weight: 600; text-align: center; margin-top: 8px; min-height: 16px; }
+  .ingreso-msg.ok  { color: #15803d; }
+  .ingreso-msg.err { color: #ff3b30; }
+
   /* ── LOADING OVERLAY ── */
   #loadingOverlay {
     display: none; position: fixed; inset: 0; z-index: 500;
@@ -801,6 +814,7 @@
   <div class="filters" id="filterBar">
     <button class="filter-btn" id="filtroMobBtn"  onclick="toggleFiltro('mobiliario', this)">🪑 Con mobiliario</button>
     <button class="filter-btn" id="filtroDispBtn" onclick="toggleFiltro('disponible', this)">🔓 Disponible</button>
+    <button class="filter-btn" id="filtroNoIngresadosBtn" style="display:none" onclick="toggleFiltro('noIngresados', this)">🚪 No ingresaron</button>
   </div>
 </div>
 
@@ -1121,6 +1135,13 @@
       </div>
     </div>
 
+    <!-- INGRESO (solo Admin, cuando pago 100% + contrato firmado + no ingresó) -->
+    <div class="ingreso-section" id="ingresoSection" style="display:none">
+      <div class="ingreso-info" id="ingresoInfo"></div>
+      <button class="ingreso-btn" id="ingresoBtn" onclick="darIngreso()" style="display:none">🚪 Dar ingreso</button>
+      <div class="ingreso-msg" id="ingresoMsg"></div>
+    </div>
+
     <!-- COMENTARIOS (texto libre, solo perfil 1 y 3, no en Disponible) -->
     </div><!-- /.main-panel -->
     <div class="mob-panel" id="comentariosPanel">
@@ -1224,7 +1245,7 @@ let lastTap = 0;
 document.addEventListener('touchend', e => { const now=Date.now(); if(now-lastTap<300) e.preventDefault(); lastTap=now; }, {passive:false});
 
 // ── VERSIÓN DE LA APP ────────────────────────────────────────────────────────
-const APP_VERSION = 'v1.6';   // ← cambiá solo acá
+const APP_VERSION = 'v1.7';   // ← cambiá solo acá
 document.addEventListener('DOMContentLoaded', () => {
   const lv = document.getElementById('loginVersion');
   const hv = document.getElementById('headerVersion');
@@ -1338,6 +1359,7 @@ function buildGrid(gridId, data) {
           data-resp="${resp.replace(/"/g,'&quot;')}"
           data-contrato="${contrato ? 'SI' : 'NO'}"
           data-mob="${tieneMob ? 'SI' : 'NO'}"
+          data-ingreso="${ingreso ? 'SI' : 'NO'}"
           onclick="openModal('${s.num}', event)">
           ${contrato ? `<span class="contrato-badge" title="Contrato firmado">✍️</span>` : ''}
           ${tieneMob ? `<span class="mob-badge" title="Tiene mobiliario">🪑</span>` : ''}
@@ -1419,12 +1441,20 @@ function switchFloor(f, btn) {
   requestAnimationFrame(() => requestAnimationFrame(() => { aplicarZoom(); buildMinimap(); }));
 }
 
-let filtroMobiliario = false, filtroDisponible = false;
+// Los 3 filtros rápidos (mobiliario / disponible / no ingresaron) son
+// mutuamente excluyentes, tipo radio-button: activar uno desactiva los
+// otros dos, y volver a tocar el que ya está activo lo apaga (sin filtro).
+let currentFilter = 'todos'; // 'todos' | 'mobiliario' | 'disponible' | 'noIngresados'
 
 function toggleFiltro(tipo, btn) {
-  if (tipo === 'mobiliario') filtroMobiliario = !filtroMobiliario;
-  if (tipo === 'disponible') filtroDisponible = !filtroDisponible;
-  btn.classList.toggle('active');
+  const desactivar = (currentFilter === tipo);
+  document.querySelectorAll('#filterBar .filter-btn').forEach(b => b.classList.remove('active'));
+  if (desactivar) {
+    currentFilter = 'todos';
+  } else {
+    currentFilter = tipo;
+    btn.classList.add('active');
+  }
   applyFilters();
 }
 
@@ -1437,13 +1467,16 @@ function toggleMisVentas(btn) {
 function applyFilters() {
   const q = document.getElementById('searchInput').value.toLowerCase().trim();
   const gridId = currentFloor==='pb' ? 'grid-pb' : 'grid-pa';
-  const anyActive = filtroMobiliario || filtroDisponible || soloMisVentas || !!q;
+  const anyActive = currentFilter !== 'todos' || soloMisVentas || !!q;
   document.querySelectorAll(`#${gridId} .stand`).forEach(el => {
-    const matchMob  = !filtroMobiliario || el.dataset.mob==='SI';
-    const matchDisp = !filtroDisponible || el.dataset.e==='Disponible';
+    const matchF = currentFilter==='todos'        ? true
+                 : currentFilter==='mobiliario'    ? el.dataset.mob==='SI'
+                 : currentFilter==='disponible'    ? el.dataset.e==='Disponible'
+                 : currentFilter==='noIngresados'  ? ((el.dataset.e==='Pagado' || el.dataset.e==='Señado') && el.dataset.ingreso!=='SI')
+                 : true;
     const matchS    = !q || el.dataset.num.includes(q) || (el.dataset.rb||'').toLowerCase().includes(q) || (el.dataset.n||'').toLowerCase().includes(q);
     const matchMine = !soloMisVentas || (el.dataset.resp||'').toLowerCase() === (CURRENT_USER||'').toLowerCase();
-    if (matchMob && matchDisp && matchS && matchMine) {
+    if (matchF && matchS && matchMine) {
       el.classList.remove('dimmed');
       if (anyActive) el.classList.add('highlighted'); else el.classList.remove('highlighted');
     } else {
@@ -1633,6 +1666,44 @@ function openModal(id, evt) {
     resetMobAdicionalUI();
   } else {
     mobAdicionalSection.style.display = 'none';
+  }
+
+  // ── INGRESO (solo Admin) ──────────────────────────────────────────────
+  const ingresoSection = document.getElementById('ingresoSection');
+  const ingresoBtn     = document.getElementById('ingresoBtn');
+  const ingresoInfo    = document.getElementById('ingresoInfo');
+  const ingresoMsg     = document.getElementById('ingresoMsg');
+  if (ingresoMsg) { ingresoMsg.textContent = ''; ingresoMsg.className = 'ingreso-msg'; }
+
+  if (ingresoSection && CURRENT_PERFIL === 3) {
+    const yaIngreso  = extra.ingreso === 'SI';
+    const contratoOk = extra.contrato === 'SI';
+    const pagadoOk   = estado === 'Pagado';
+
+    ingresoSection.style.display = 'block';
+
+    if (yaIngreso) {
+      ingresoBtn.style.display = 'none';
+      ingresoInfo.textContent = '✅ Ya ingresó'
+        + (extra.ingresoUser  ? ` — registrado por ${extra.ingresoUser}` : '')
+        + (extra.ingresoFecha ? ` (${extra.ingresoFecha})` : '');
+      ingresoInfo.className = 'ingreso-info ok';
+    } else if (contratoOk && pagadoOk) {
+      ingresoBtn.style.display = 'block';
+      ingresoBtn.disabled = false;
+      ingresoBtn.textContent = '🚪 Dar ingreso';
+      ingresoInfo.textContent = '';
+      ingresoInfo.className = 'ingreso-info';
+    } else {
+      ingresoBtn.style.display = 'none';
+      const faltantes = [];
+      if (!pagadoOk)   faltantes.push('el pago del 100%');
+      if (!contratoOk) faltantes.push('el contrato firmado');
+      ingresoInfo.textContent = `⏳ Falta ${faltantes.join(' y ')} para poder dar el ingreso.`;
+      ingresoInfo.className = 'ingreso-info pending';
+    }
+  } else if (ingresoSection) {
+    ingresoSection.style.display = 'none';
   }
 }
 
@@ -2573,6 +2644,9 @@ function activarSesion(user, perfil) {
       perfilBadge.style.display = 'none';
     }
   }
+  // Filtro rápido "No ingresaron": solo visible para Admin (perfil 3)
+  const noIngresadosBtn = document.getElementById('filtroNoIngresadosBtn');
+  if (noIngresadosBtn) noIngresadosBtn.style.display = (CURRENT_PERFIL === 3) ? '' : 'none';
   load(); // carga el mapa recién después del login
 }
 
@@ -3212,6 +3286,72 @@ async function guardarComentario() {
     clearBtnBusy(btn, 'Guardar comentario');
     msgEl.textContent = 'Error de conexión.';
     msgEl.className = 'comentarios-msg err';
+  }
+}
+
+// ── DAR INGRESO (solo Admin) ─────────────────────────────────────────────
+// El backend (Apps Script) es quien valida de forma atómica que el stand
+// no haya sido ingresado ya por otro Admin (lee y escribe con LockService),
+// así que acá solo mostramos el resultado que nos devuelva. Igual que con
+// mobiliario/comentarios, patcheamos el dato localmente en vez de re-pedir
+// el mapa entero, y mostramos la misma pantalla de éxito con check animado
+// y botón "Continuar" que se usa al cargar un stand.
+async function darIngreso() {
+  if (!currentStandId) return;
+  const btn   = document.getElementById('ingresoBtn');
+  const msgEl = document.getElementById('ingresoMsg');
+  msgEl.textContent = ''; msgEl.className = 'ingreso-msg';
+
+  setBtnBusy(btn, 'Registrando...');
+  try {
+    const url  = `${API_URL}?tipo=ingreso&stand=${encodeURIComponent(currentStandId)}&user=${encodeURIComponent(CURRENT_USER)}`;
+    const res  = await fetch(url);
+    const data = await res.json();
+
+    if (data.ok) {
+      // Patch local: marcamos el stand como ingresado sin re-pedir el mapa entero.
+      if (!FULL_DATA.extraData) FULL_DATA.extraData = {};
+      if (!FULL_DATA.extraData[currentStandId]) FULL_DATA.extraData[currentStandId] = {};
+      const exIng = FULL_DATA.extraData[currentStandId];
+      exIng.ingreso      = 'SI';
+      exIng.ingresoUser  = data.user  || CURRENT_USER;
+      exIng.ingresoFecha = data.fecha || '';
+
+      msgEl.textContent = '';
+      msgEl.className = 'ingreso-msg';
+      renderMapUI();
+      await showSuccessOverlay('Ingreso registrado', `Puesto ${currentStandId}`);
+      document.getElementById('modalOverlay').classList.remove('open');
+
+    } else if (data.yaIngreso) {
+      // Concurrencia: otro Admin ya le había dado el ingreso a este stand
+      // (el backend lo detectó al validar antes de escribir). Acá NO
+      // mostramos la pantalla de éxito, porque esta acción puntual no fue
+      // la que lo registró — solo avisamos y refrescamos el dato local.
+      if (!FULL_DATA.extraData) FULL_DATA.extraData = {};
+      if (!FULL_DATA.extraData[currentStandId]) FULL_DATA.extraData[currentStandId] = {};
+      const exIng = FULL_DATA.extraData[currentStandId];
+      exIng.ingreso      = 'SI';
+      exIng.ingresoUser  = data.user  || '';
+      exIng.ingresoFecha = data.fecha || '';
+
+      msgEl.textContent = `⚠️ Este stand ya había sido ingresado`
+        + (data.user  ? ` por ${data.user}`   : '')
+        + (data.fecha ? ` (${data.fecha})`    : '')
+        + `. No se registró nada nuevo.`;
+      msgEl.className = 'ingreso-msg err';
+      btn.style.display = 'none'; // ya no corresponde reintentar
+      renderMapUI();
+
+    } else {
+      msgEl.textContent = data.error || 'No se pudo registrar el ingreso.';
+      msgEl.className   = 'ingreso-msg err';
+      clearBtnBusy(btn, '🚪 Dar ingreso');
+    }
+  } catch (err) {
+    msgEl.textContent = 'Error de conexión.';
+    msgEl.className   = 'ingreso-msg err';
+    clearBtnBusy(btn, '🚪 Dar ingreso');
   }
 }
 
