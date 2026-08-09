@@ -3306,7 +3306,9 @@ async function guardarComentario() {
 // ── CONFIRMAR FIRMA DE CONTRATO (solo Admin) ─────────────────────────────
 // Se ofrece cuando el stand está Pagado al 100% pero todavía no tiene el
 // contrato firmado (col BB = NO). El backend valida perfil Admin y que el
-// stand esté pagado antes de escribir "SI" en BB.
+// stand esté pagado antes de escribir "SI" en BB, y usa LockService igual
+// que darIngreso() para detectar si otro Admin ya lo había confirmado
+// (data.yaFirmado) y avisar en vez de mostrar un falso éxito.
 async function confirmarContrato() {
   if (!currentStandId) return;
   const btn   = document.getElementById('contratoBtn');
@@ -3358,6 +3360,42 @@ async function confirmarContrato() {
       document.getElementById('ingresoInfo').textContent = '';
       document.getElementById('ingresoInfo').className = 'ingreso-info';
       showToast('✅ Contrato firmado registrado');
+
+    } else if (data.yaFirmado) {
+      // Concurrencia: otro Admin (o un doble clic) ya había confirmado este
+      // contrato antes de que llegara este pedido. Acá NO mostramos el toast
+      // de éxito, porque esta acción puntual no fue la que lo registró —
+      // solo avisamos y dejamos la UI reflejando el estado real.
+      if (!FULL_DATA.extraData) FULL_DATA.extraData = {};
+      if (!FULL_DATA.extraData[currentStandId]) FULL_DATA.extraData[currentStandId] = {};
+      FULL_DATA.extraData[currentStandId].contrato = 'SI';
+
+      const standElContrato = document.querySelector(`.stand[data-num="${currentStandId}"]`);
+      if (standElContrato) {
+        standElContrato.dataset.contrato = 'SI';
+        if (!standElContrato.querySelector('.contrato-badge')) {
+          const badge = document.createElement('span');
+          badge.className = 'contrato-badge';
+          badge.title = 'Contrato firmado';
+          badge.textContent = '✍️';
+          standElContrato.appendChild(badge);
+        }
+      }
+      const modalZonaEl = document.getElementById('modalZona');
+      if (modalZonaEl) modalZonaEl.textContent = '✍️ Contrato firmado';
+
+      contratoBtn.style.display = 'none'; // ya no corresponde reintentar
+      const ingresoBtnEl2 = document.getElementById('ingresoBtn');
+      ingresoBtnEl2.style.display = 'block';
+      ingresoBtnEl2.disabled = false;
+      ingresoBtnEl2.textContent = '🚪 Dar ingreso';
+
+      clearBtnBusy(btn, '✍️ Confirmar firma de contrato');
+      msgEl.textContent = `⚠️ Este contrato ya había sido firmado`
+        + (data.user  ? ` por ${data.user}`   : '')
+        + (data.fecha ? ` (${data.fecha})`    : '')
+        + `. No se registró nada nuevo.`;
+      msgEl.className = 'ingreso-msg err';
 
     } else {
       clearBtnBusy(btn, '✍️ Confirmar firma de contrato');
