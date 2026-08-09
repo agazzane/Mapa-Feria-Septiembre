@@ -1932,10 +1932,13 @@ async function asignarFeriante() {
       return;
     }
 
-    // Todo OK: patcheamos el stand localmente (pasa a Señado, con el
-    // feriante y la seña recién cargada) en vez de re-pedir el mapa entero.
+    // Todo OK: patcheamos el stand localmente (con el feriante y la seña
+    // recién cargada) para dar feedback instantáneo. El estado pasa a
+    // "Pagado" si la seña ya cubre el precio total, o "Señado" si queda
+    // saldo pendiente — antes acá se asumía "Señado" siempre, aunque se
+    // hubiera pagado el 100% en un solo pago.
     const standObj = FULL_DATA.pbData[currentStandId] || FULL_DATA.paData[currentStandId];
-    if (standObj) standObj.e = 'Señado';
+    if (standObj) standObj.e = (precio > 0 && monto >= precio) ? 'Pagado' : 'Señado';
     if (!FULL_DATA.extraData) FULL_DATA.extraData = {};
     if (!FULL_DATA.extraData[currentStandId]) FULL_DATA.extraData[currentStandId] = {};
     const exAsig = FULL_DATA.extraData[currentStandId];
@@ -1951,7 +1954,16 @@ async function asignarFeriante() {
     msgEl.textContent = `✅ ${feriante} asignado y seña de $${monto.toLocaleString('es-AR')} registrada.`;
     msgEl.className = 'assign-msg ok';
     renderMapUI();
-    await showSuccessOverlay('Stand cargado', `${feriante} · Puesto ${currentStandId}`);
+
+    // El patch local de arriba no puede conocer campos que el backend/planilla
+    // calculan solos (como el rubro "rb", que sale de una fórmula en la hoja
+    // FERIA). Por eso, igual que se hace en cargarPago() cuando un pago salda
+    // la deuda, disparamos un load() real en paralelo — como modalLocked ya
+    // está en true, load() no muestra su propio spinner y corre calladito
+    // atrás de la pantalla de éxito. Si el usuario aprieta "Continuar" antes
+    // de que termine, showSuccessOverlay se encarga de esperarlo.
+    const mapLoadPromise = load();
+    await showSuccessOverlay('Stand cargado', `${feriante} · Puesto ${currentStandId}`, mapLoadPromise);
     document.getElementById('modalOverlay').classList.remove('open');
     modalLocked = false;
     setAssignFieldsDisabled(false);
