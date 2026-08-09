@@ -542,6 +542,9 @@
   .ingreso-btn { width: 100%; padding: 10px; background: #1a7f3c; color: white; border: none; border-radius: var(--radius-sm); font-size: 14px; font-weight: 600; font-family: var(--font); cursor: pointer; transition: background .18s; }
   .ingreso-btn:active { background: #146830; }
   .ingreso-btn:disabled { background: #a7d8b7; color: #0a3d1f; cursor: not-allowed; }
+  .contrato-btn { width: 100%; padding: 10px; background: #007aff; color: white; border: none; border-radius: var(--radius-sm); font-size: 14px; font-weight: 600; font-family: var(--font); cursor: pointer; transition: background .18s; margin-bottom: 8px; }
+  .contrato-btn:active { background: #0062cc; }
+  .contrato-btn:disabled { background: #a9d0ff; color: #0a2e5c; cursor: not-allowed; }
   .ingreso-info { font-size: 13px; font-weight: 600; text-align: center; }
   .ingreso-info.ok      { color: #15803d; }
   .ingreso-info.pending { color: var(--text3); font-weight: 500; }
@@ -1138,6 +1141,7 @@
     <!-- INGRESO (solo Admin, cuando pago 100% + contrato firmado + no ingresó) -->
     <div class="ingreso-section" id="ingresoSection" style="display:none">
       <div class="ingreso-info" id="ingresoInfo"></div>
+      <button class="contrato-btn" id="contratoBtn" onclick="confirmarContrato()" style="display:none">✍️ Confirmar firma de contrato</button>
       <button class="ingreso-btn" id="ingresoBtn" onclick="darIngreso()" style="display:none">🚪 Dar ingreso</button>
       <div class="ingreso-msg" id="ingresoMsg"></div>
     </div>
@@ -1671,6 +1675,7 @@ function openModal(id, evt) {
   // ── INGRESO (solo Admin) ──────────────────────────────────────────────
   const ingresoSection = document.getElementById('ingresoSection');
   const ingresoBtn     = document.getElementById('ingresoBtn');
+  const contratoBtn    = document.getElementById('contratoBtn');
   const ingresoInfo    = document.getElementById('ingresoInfo');
   const ingresoMsg     = document.getElementById('ingresoMsg');
   if (ingresoMsg) { ingresoMsg.textContent = ''; ingresoMsg.className = 'ingreso-msg'; }
@@ -1681,6 +1686,7 @@ function openModal(id, evt) {
     const pagadoOk   = estado === 'Pagado';
 
     ingresoSection.style.display = 'block';
+    contratoBtn.style.display = 'none';
 
     if (yaIngreso) {
       ingresoBtn.style.display = 'none';
@@ -1694,6 +1700,14 @@ function openModal(id, evt) {
       ingresoBtn.textContent = '🚪 Dar ingreso';
       ingresoInfo.textContent = '';
       ingresoInfo.className = 'ingreso-info';
+    } else if (pagadoOk && !contratoOk) {
+      // Pagado al 100% pero falta firmar el contrato: se ofrece confirmarlo acá mismo.
+      ingresoBtn.style.display = 'none';
+      contratoBtn.style.display = 'block';
+      contratoBtn.disabled = false;
+      contratoBtn.textContent = '✍️ Confirmar firma de contrato';
+      ingresoInfo.textContent = '⏳ Falta el contrato firmado para poder dar el ingreso.';
+      ingresoInfo.className = 'ingreso-info pending';
     } else {
       ingresoBtn.style.display = 'none';
       const faltantes = [];
@@ -3286,6 +3300,74 @@ async function guardarComentario() {
     clearBtnBusy(btn, 'Guardar comentario');
     msgEl.textContent = 'Error de conexión.';
     msgEl.className = 'comentarios-msg err';
+  }
+}
+
+// ── CONFIRMAR FIRMA DE CONTRATO (solo Admin) ─────────────────────────────
+// Se ofrece cuando el stand está Pagado al 100% pero todavía no tiene el
+// contrato firmado (col BB = NO). El backend valida perfil Admin y que el
+// stand esté pagado antes de escribir "SI" en BB.
+async function confirmarContrato() {
+  if (!currentStandId) return;
+  const btn   = document.getElementById('contratoBtn');
+  const msgEl = document.getElementById('ingresoMsg');
+  msgEl.textContent = ''; msgEl.className = 'ingreso-msg';
+
+  setBtnBusy(btn, 'Confirmando...');
+  try {
+    const url  = `${API_URL}?tipo=contrato&stand=${encodeURIComponent(currentStandId)}&user=${encodeURIComponent(CURRENT_USER)}`;
+    const res  = await fetch(url);
+    const data = await res.json();
+
+    if (data.ok) {
+      // Patch local: marcamos el contrato como firmado sin re-pedir el mapa entero.
+      if (!FULL_DATA.extraData) FULL_DATA.extraData = {};
+      if (!FULL_DATA.extraData[currentStandId]) FULL_DATA.extraData[currentStandId] = {};
+      FULL_DATA.extraData[currentStandId].contrato = 'SI';
+
+      // Actualizar badge ✍️ en el stand del mapa sin recargar
+      const standElContrato = document.querySelector(`.stand[data-num="${currentStandId}"]`);
+      if (standElContrato) {
+        standElContrato.dataset.contrato = 'SI';
+        if (!standElContrato.querySelector('.contrato-badge')) {
+          const badge = document.createElement('span');
+          badge.className = 'contrato-badge';
+          badge.title = 'Contrato firmado';
+          badge.textContent = '✍️';
+          standElContrato.appendChild(badge);
+        }
+      }
+
+      // Actualizar el texto "✍️ Contrato firmado" debajo del nombre, en el modal abierto
+      const modalZonaEl = document.getElementById('modalZona');
+      if (modalZonaEl) modalZonaEl.textContent = '✍️ Contrato firmado';
+
+      // El modal se queda abierto (no se cierra, a diferencia de "Dar ingreso"):
+      // el flujo natural es firmar el contrato y a continuación dar el ingreso.
+      // Actualizamos a mano la sección de ingreso, ya que openModal() no se
+      // vuelve a llamar automáticamente.
+      contratoBtn.style.display = 'none';
+      const ingresoBtnEl = document.getElementById('ingresoBtn');
+      ingresoBtnEl.style.display = 'block';
+      ingresoBtnEl.disabled = false;
+      ingresoBtnEl.textContent = '🚪 Dar ingreso';
+
+      clearBtnBusy(btn, '✍️ Confirmar firma de contrato');
+      msgEl.textContent = '';
+      msgEl.className = 'ingreso-msg';
+      document.getElementById('ingresoInfo').textContent = '';
+      document.getElementById('ingresoInfo').className = 'ingreso-info';
+      showToast('✅ Contrato firmado registrado');
+
+    } else {
+      clearBtnBusy(btn, '✍️ Confirmar firma de contrato');
+      msgEl.textContent = data.error || 'No se pudo confirmar el contrato.';
+      msgEl.className   = 'ingreso-msg err';
+    }
+  } catch (err) {
+    clearBtnBusy(btn, '✍️ Confirmar firma de contrato');
+    msgEl.textContent = 'Error de conexión.';
+    msgEl.className   = 'ingreso-msg err';
   }
 }
 
