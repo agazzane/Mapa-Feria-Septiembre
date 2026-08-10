@@ -1239,7 +1239,7 @@ let lastTap = 0;
 document.addEventListener('touchend', e => { const now=Date.now(); if(now-lastTap<300) e.preventDefault(); lastTap=now; }, {passive:false});
 
 // ── VERSIÓN DE LA APP ────────────────────────────────────────────────────────
-const APP_VERSION = 'v1.9';   // ← cambiá solo acá
+const APP_VERSION = 'v1.8';   // ← cambiá solo acá
 document.addEventListener('DOMContentLoaded', () => {
   const lv = document.getElementById('loginVersion');
   const hv = document.getElementById('headerVersion');
@@ -2056,12 +2056,12 @@ function playSuccessSound() {
   _successTone(ctx, 3135,    t + 0.24, 0.5,  { type: 'sine',     gain: 0.05 }); // armónico de la cola
 }
 
-// Overlay de éxito (check animado, pantalla completa) para la confirmación
-// de carga de stand. Se muestra apenas se confirma la asignación/seña, y
-// queda fijo hasta que el usuario aprieta "Continuar". El mapa se recarga
-// de fondo mientras tanto (mapLoadPromise); si el usuario aprieta el botón
-// antes de que esa recarga termine, se muestra la ruedita de carga hasta
-// que esté lista.
+// Overlay de éxito (sticker animado, pantalla completa) para la confirmación
+// de carga de stand. Al apretar "Continuar" se cierra al toque y se vuelve
+// al mapa; si la actualización de fondo (mapLoadPromise) todavía no
+// terminó, se muestra un loading corto sobre el mapa en vez de retener al
+// usuario en esta pantalla (retenerlo daba la sensación de que el click no
+// había funcionado).
 function showSuccessOverlay(title, subtitle, mapLoadPromise = Promise.resolve()) {
   return new Promise(resolve => {
     const overlay = document.getElementById('successOverlay');
@@ -2090,20 +2090,12 @@ function showSuccessOverlay(title, subtitle, mapLoadPromise = Promise.resolve())
 
     const onContinue = () => {
       btn.removeEventListener('click', onContinue);
-      if (mapReady) {
-        finish();
-        return;
+      // Cerramos ya mismo, sin esperar la actualización de fondo.
+      finish();
+      if (!mapReady) {
+        showLoading('Actualizando mapa...');
+        mapLoadPromise.then(hideLoading).catch(hideLoading);
       }
-      // El mapa todavía se está actualizando: recién acá mostramos la
-      // ruedita de carga, y cerramos todo cuando termine.
-      showLoading('Actualizando mapa...');
-      mapLoadPromise.then(() => {
-        hideLoading();
-        finish();
-      }).catch(() => {
-        hideLoading();
-        finish();
-      });
     };
 
     btn.addEventListener('click', onContinue);
