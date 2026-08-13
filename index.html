@@ -1249,7 +1249,7 @@ let lastTap = 0;
 document.addEventListener('touchend', e => { const now=Date.now(); if(now-lastTap<300) e.preventDefault(); lastTap=now; }, {passive:false});
 
 // ── VERSIÓN DE LA APP ────────────────────────────────────────────────────────
-const APP_VERSION = 'v1.9';   // ← cambiá solo acá
+const APP_VERSION = 'v1.10';   // ← cambiá solo acá
 document.addEventListener('DOMContentLoaded', () => {
   const lv = document.getElementById('loginVersion');
   const hv = document.getElementById('headerVersion');
@@ -2622,6 +2622,41 @@ function mostrarBtnBio() {
 let CURRENT_USER   = null;
 let CURRENT_PERFIL = 1;   // 1=VENDEDOR, 2=VISUALIZADOR, 3=ADMIN
 
+// ── POLLING DEL MAPA ─────────────────────────────────────────────────────────
+// Refresca solo la ocupación de stands (tipo=mapa) cada POLL_INTERVAL_MS,
+// para que varios usuarios viendo el mapa a la vez vean los cambios de otros
+// sin tener que recargar la página a mano. Se pausa mientras hay un modal de
+// stand abierto (el usuario está operando y no queremos pisarle la UI ni la
+// escritura en curso), y se salta el ciclo si el pedido anterior todavía no
+// volvió, para no acumular requests si la planilla responde lento.
+const POLL_INTERVAL_MS = 5000;
+let pollTimerId  = null;
+let pollInFlight = false;
+
+async function pollTick() {
+  if (pollInFlight) return; // el ciclo anterior todavía no volvió, lo saltamos
+  const modalAbierto = document.getElementById('modalOverlay').classList.contains('open');
+  if (modalAbierto) return; // no molestar mientras el usuario está operando un stand
+  pollInFlight = true;
+  try {
+    await refreshMapaData();
+  } finally {
+    pollInFlight = false;
+  }
+}
+
+function startPolling() {
+  if (pollTimerId) return; // ya está corriendo
+  pollTimerId = setInterval(pollTick, POLL_INTERVAL_MS);
+}
+
+function stopPolling() {
+  if (pollTimerId) {
+    clearInterval(pollTimerId);
+    pollTimerId = null;
+  }
+}
+
 async function initLogin() {
   // ¿Ya hay sesión activa?
   const saved = sessionStorage.getItem('feriaUser');
@@ -2724,11 +2759,12 @@ function activarSesion(user, perfil) {
   // Filtro rápido "No ingresaron": solo visible para Admin (perfil 3)
   const noIngresadosBtn = document.getElementById('filtroNoIngresadosBtn');
   if (noIngresadosBtn) noIngresadosBtn.style.display = (CURRENT_PERFIL === 3) ? '' : 'none';
-  load(); // carga el mapa recién después del login
+  load().then(startPolling); // carga el mapa y, recién ahí, arranca el polling
 }
 
 function cerrarSesion() {
   if (!confirm('¿Cerrar sesión?')) return;
+  stopPolling();
   sessionStorage.removeItem('feriaUser');
   sessionStorage.removeItem('feriaPerfil');
   location.reload();
