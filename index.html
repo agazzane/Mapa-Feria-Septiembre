@@ -1249,7 +1249,7 @@ let lastTap = 0;
 document.addEventListener('touchend', e => { const now=Date.now(); if(now-lastTap<300) e.preventDefault(); lastTap=now; }, {passive:false});
 
 // ── VERSIÓN DE LA APP ────────────────────────────────────────────────────────
-const APP_VERSION = 'v1.9';   // ← cambiá solo acá
+const APP_VERSION = 'v1.10';   // ← cambiá solo acá
 document.addEventListener('DOMContentLoaded', () => {
   const lv = document.getElementById('loginVersion');
   const hv = document.getElementById('headerVersion');
@@ -3454,10 +3454,7 @@ async function confirmarContrato() {
       ingresoBtnEl2.textContent = '🚪 Dar ingreso';
 
       clearBtnBusy(btn, '✍️ Confirmar firma de contrato');
-      msgEl.textContent = `⚠️ Este contrato ya había sido firmado`
-        + (data.user  ? ` por ${data.user}`   : '')
-        + (data.fecha ? ` (${data.fecha})`    : '')
-        + `. No se registró nada nuevo.`;
+      msgEl.textContent = '⚠️ Este contrato ya había sido firmado. No se registró nada nuevo.';
       msgEl.className = 'ingreso-msg err';
 
     } else {
@@ -3515,13 +3512,8 @@ async function darIngreso() {
       if (!FULL_DATA.extraData[currentStandId]) FULL_DATA.extraData[currentStandId] = {};
       const exIng = FULL_DATA.extraData[currentStandId];
       exIng.ingreso      = 'SI';
-      exIng.ingresoUser  = data.user  || '';
-      exIng.ingresoFecha = data.fecha || '';
 
-      msgEl.textContent = `⚠️ Este stand ya había sido ingresado`
-        + (data.user  ? ` por ${data.user}`   : '')
-        + (data.fecha ? ` (${data.fecha})`    : '')
-        + `. No se registró nada nuevo.`;
+      msgEl.textContent = '⚠️ Este stand ya había sido ingresado. No se registró nada nuevo.';
       msgEl.className = 'ingreso-msg err';
       btn.style.display = 'none'; // ya no corresponde reintentar
       renderMapUI();
