@@ -2630,14 +2630,11 @@ async function initLogin() {
     activarSesion(saved, savedPerfil);
     return;
   }
-  // ¿Hay credencial biométrica guardada? → mostrar el botón y esperar el tap
-  // del usuario. IMPORTANTE: no se dispara loginConBiometrico() automáticamente
-  // acá, porque muchos navegadores (sobre todo Safari/iOS) exigen un gesto
-  // explícito del usuario para navigator.credentials.get(); si se llama sola
-  // al cargar la página, la promesa puede quedar colgada hasta el timeout de
-  // 60s, dejando el botón trabado en "Verificando...".
+  // ¿Hay credencial biométrica guardada? → disparar directo, sin pedir contraseña
   if (bioDisponible() && localStorage.getItem(BIO_STORAGE_KEY)) {
     mostrarBtnBio();
+    loginConBiometrico(); // si el usuario cancela, queda el botón + el form abajo
+    return;
   }
   // Cargar lista de usuarios para el combo del login
   try {
