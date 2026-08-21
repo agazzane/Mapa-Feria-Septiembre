@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Mapa de Stands – Feria Septiembre 2026</title>
+<title>Mapa de Stands – Feria SUCOVI 2026</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
@@ -72,6 +72,15 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   header p { font-size: 11px; color: rgba(255,255,255,.5); margin: 0; line-height: 1.3; }
+  .header-mes-badge {
+    align-self: flex-start;
+    display: inline-block;
+    font-size: 11px; font-weight: 700;
+    color: #ffffff; background: var(--accent);
+    padding: 2px 9px; border-radius: 100px;
+    letter-spacing: .1px; line-height: 1.5;
+    margin: 2px 0 1px;
+  }
   .last-updated { display: none; }
   .login-user-pill {
     flex-shrink: 0;
@@ -91,14 +100,30 @@
     flex-shrink: 0; text-transform: uppercase;
   }
 
-  /* ── BARRA DE OCUPACIÓN — una sola línea: %, barra larga, cuadraditos con valores ── */
+  /* ── GRUPO COLAPSABLE (barra de ocupación + tabs + buscador/filtros) ──
+     Animación por max-height en píxeles (no grid-template-rows): esa técnica
+     se ve perfecto en desktop, pero varios navegadores mobile no la animan
+     bien (saltan de una en vez de interpolar) — max-height en px es mucho
+     más parejo entre navegadores. La altura real se mide en JS (ver
+     updateScrollCollapseMaxHeight) y se guarda en la variable CSS de abajo,
+     porque el contenido no siempre mide lo mismo (ej. tamaño de letra del
+     sistema, orientación del celular). */
+  .scroll-collapse {
+    max-height: var(--scroll-collapse-h, 500px);
+    overflow: hidden;
+    transition: max-height .28s ease;
+    flex-shrink: 0;
+  }
+  .scroll-collapse.collapsed { max-height: 0 !important; }
+
+  /* ── BARRA DE OCUPACIÓN — fila superior (%, barra) + fila de chips grandes debajo ── */
   .occ-bar-wrap {
     background: #212d42;
     border-bottom: 1px solid rgba(255,255,255,.08);
     padding: 10px 16px;
     flex-shrink: 0;
   }
-  .occ-bar-row { display: flex; align-items: center; gap: 10px; }
+  .occ-bar-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
   .occ-bar-pct {
     font-size: 20px; font-weight: 700; color: #ffffff;
     line-height: 1; letter-spacing: -.3px; flex-shrink: 0;
@@ -111,15 +136,22 @@
   .occ-bar-seg#occSegPagado { background: #30d158; }
   .occ-bar-seg#occSegSenado { background: #ffd60a; }
   .occ-bar-seg#occSegDisp   { background: #e5e5ea; }
-  .occ-chips { display: flex; gap: 5px; flex-shrink: 0; }
+  .occ-chips { display: flex; gap: 8px; }
   .occ-chip {
-    font-size: 12px; font-weight: 700; line-height: 1;
-    padding: 5px 8px; border-radius: 7px; min-width: 22px;
-    text-align: center;
+    flex: 1; border-radius: 8px; padding: 6px 8px; text-align: center;
   }
-  .occ-chip-pagado { background: rgba(48,209,88,.2);  color: #30d158; }
-  .occ-chip-senado { background: rgba(255,214,10,.2); color: #ffd60a; }
-  .occ-chip-libre  { background: rgba(255,255,255,.12); color: rgba(255,255,255,.85); }
+  .occ-chip-num {
+    font-size: 19px; font-weight: 700; line-height: 1.1;
+  }
+  .occ-chip-lbl {
+    font-size: 10px; color: rgba(255,255,255,.6); margin-top: 1px;
+  }
+  .occ-chip-pagado { background: rgba(48,209,88,.15); }
+  .occ-chip-pagado .occ-chip-num { color: #30d158; }
+  .occ-chip-senado { background: rgba(255,214,10,.15); }
+  .occ-chip-senado .occ-chip-num { color: #ffd60a; }
+  .occ-chip-libre  { background: rgba(255,255,255,.1); }
+  .occ-chip-libre  .occ-chip-num { color: #ffffff; }
 
   /* ── STATS (oculto) ── */
   .stats { display: none; }
@@ -352,13 +384,13 @@
   }
 
   /* ── LOGIN ── */
-  #loginScreen {
+  #loginScreen, #mesScreen {
     position: fixed; inset: 0;
     background: linear-gradient(160deg, #1c1c1e 0%, #2c2c2e 100%);
     display: flex; align-items: center; justify-content: center;
     z-index: 999; padding: 24px;
   }
-  #loginScreen.hidden { display: none; }
+  #loginScreen.hidden, #mesScreen.hidden { display: none; }
   .login-card {
     background: rgba(255,255,255,.97); border-radius: 22px; padding: 32px 28px 36px;
     width: 100%; max-width: 360px; box-shadow: 0 32px 80px rgba(0,0,0,.5);
@@ -554,7 +586,7 @@
 
   /* ── LOADING OVERLAY ── */
   #loadingOverlay {
-    display: none; position: fixed; inset: 0; z-index: 650;
+    display: none; position: fixed; inset: 0; z-index: 500;
     background: rgba(0,0,0,.45); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
     align-items: center; justify-content: center; flex-direction: column; gap: 14px;
     opacity: 0; transition: opacity .18s ease;
@@ -587,6 +619,7 @@
   }
   #successOverlay.visible { display: flex; }
   #successOverlay.visible.shown { opacity: 1; }
+  #successFireworksCanvas { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
   @keyframes successPopIn { from { transform: scale(.3); opacity: 0; } to { transform: scale(1); opacity: 1; } }
   .success-chk-wrap { position: relative; width: 192px; height: 192px; }
   .success-chk-ring, .success-chk-mid, .success-chk-core { position: absolute; border-radius: 50%; }
@@ -597,10 +630,11 @@
     display: flex; align-items: center; justify-content: center;
     animation: successPopIn .45s cubic-bezier(.34,1.56,.64,1) .1s both;
   }
-  .success-title { font-size: 22px; font-weight: 700; color: var(--text); animation: fadeIn .25s ease .12s both; }
-  .success-sub   { font-size: 16px; color: var(--text2); animation: fadeIn .25s ease .16s both; text-align: center; }
+  .success-title { position: relative; z-index: 2; font-size: 22px; font-weight: 700; color: var(--text); animation: fadeIn .25s ease .12s both; }
+  .success-sub   { position: relative; z-index: 2; font-size: 16px; color: var(--text2); animation: fadeIn .25s ease .16s both; text-align: center; }
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
   .success-continue-btn {
+    position: relative; z-index: 2;
     margin-top: 18px; min-width: 220px;
     background: var(--pagado); color: #fff; border: none; border-radius: 14px;
     padding: 14px 40px; font-size: 16px; font-weight: 600; font-family: var(--font);
@@ -740,8 +774,8 @@
 <!-- ── PANTALLA DE LOGIN ── -->
 <div id="loginScreen">
   <div class="login-card">
-    <div class="login-logo"><img src="https://raw.githubusercontent.com/agazzane/Mapa-Feria-Septiembre/main/SUCOVI.jpg" style="width:64px;height:64px;border-radius:16px;object-fit:cover;"></div>
-    <div class="login-title">Feria Septiembre 2026</div>
+    <div class="login-logo"><img src="https://raw.githubusercontent.com/agazzane/Mapa-Feria-SUCOVI/main/SUCOVI.jpg" style="width:64px;height:64px;border-radius:16px;object-fit:cover;"></div>
+    <div class="login-title">Feria SUCOVI 2026</div>
     <div class="login-sub">Mapa de Stands · <span id="loginVersion"></span></div>
 
     <div class="login-field">
@@ -770,11 +804,31 @@
   </div>
 </div>
 
+<!-- ── PANTALLA DE SELECCIÓN DE MES/FERIA (solo aparece si hay más de un mes habilitado) ── -->
+<div id="mesScreen" class="hidden">
+  <div class="login-card">
+    <div class="login-logo"><img src="https://raw.githubusercontent.com/agazzane/Mapa-Feria-SUCOVI/main/SUCOVI.jpg" style="width:64px;height:64px;border-radius:16px;object-fit:cover;"></div>
+    <div class="login-title">Elegí la feria</div>
+    <div class="login-sub">Hay más de un mes disponible</div>
+
+    <div class="login-field">
+      <label class="login-label" for="mesSelect">Mes</label>
+      <div class="select-wrap">
+        <select id="mesSelect" class="login-select"></select>
+      </div>
+    </div>
+
+    <button class="login-btn" id="mesBtn" onclick="confirmarMes()">Continuar</button>
+    <div class="login-error" id="mesError"></div>
+  </div>
+</div>
+
 <header>
   <div class="header-row-top">
-    <img src="https://raw.githubusercontent.com/agazzane/Mapa-Feria-Septiembre/main/SUCOVI.jpg" class="header-logo-sq" style="object-fit:cover;">
+    <img src="https://raw.githubusercontent.com/agazzane/Mapa-Feria-SUCOVI/main/SUCOVI.jpg" class="header-logo-sq" style="object-fit:cover;">
     <div class="header-title-block">
-      <h1>Feria Septiembre 2026 <span id="headerVersion"></span></h1>
+      <h1>Feria SUCOVI 2026 <span id="headerVersion"></span></h1>
+      <span class="header-mes-badge" id="headerMesBadge" style="display:none"></span>
       <p id="subtitle">Sincronizando datos...</p>
     </div>
     <button class="login-user-pill" id="userPill" onclick="cerrarSesion()" style="display:none">
@@ -784,19 +838,35 @@
   </div>
 </header>
 
-<!-- ── BARRA DE OCUPACIÓN (una sola línea) ── -->
+<!-- ── GRUPO COLAPSABLE: se oculta al hacer scroll hacia abajo en el mapa y
+     reaparece al scrollear hacia arriba, para darle más lugar al mapa en
+     pantallas chicas. El <header> de arriba queda siempre fijo, afuera de
+     este grupo. Ver scrollCollapseGroup más abajo en el script. ── -->
+<div class="scroll-collapse" id="scrollCollapseGroup">
+<div class="scroll-collapse-inner">
+
+<!-- ── BARRA DE OCUPACIÓN (cuadrados con cantidades arriba, barra abajo) ── -->
 <div class="occ-bar-wrap" id="occBarWrap">
+  <div class="occ-chips" id="occDetail">
+    <div class="occ-chip occ-chip-pagado">
+      <div class="occ-chip-num" id="occValPagado">—</div>
+      <div class="occ-chip-lbl">Pagado</div>
+    </div>
+    <div class="occ-chip occ-chip-senado">
+      <div class="occ-chip-num" id="occValSenado">—</div>
+      <div class="occ-chip-lbl">Señado</div>
+    </div>
+    <div class="occ-chip occ-chip-libre">
+      <div class="occ-chip-num" id="occValDisp">—</div>
+      <div class="occ-chip-lbl">Libre</div>
+    </div>
+  </div>
   <div class="occ-bar-row">
     <span class="occ-bar-pct" id="occPct">—</span>
     <div class="occ-bar-track" id="occTrack">
       <div class="occ-bar-seg" id="occSegPagado" style="width:0%"></div>
       <div class="occ-bar-seg" id="occSegSenado" style="width:0%"></div>
       <div class="occ-bar-seg" id="occSegDisp"   style="width:0%"></div>
-    </div>
-    <div class="occ-chips" id="occDetail">
-      <span class="occ-chip occ-chip-pagado" id="occValPagado">—</span>
-      <span class="occ-chip occ-chip-senado" id="occValSenado">—</span>
-      <span class="occ-chip occ-chip-libre"  id="occValDisp">—</span>
     </div>
   </div>
 </div>
@@ -819,6 +889,9 @@
     <button class="filter-btn" id="filtroDispBtn" onclick="toggleFiltro('disponible', this)">🔓 Disponible</button>
     <button class="filter-btn" id="filtroNoIngresadosBtn" style="display:none" onclick="toggleFiltro('noIngresados', this)">🚪 No ingresaron</button>
   </div>
+</div>
+
+</div>
 </div>
 
 <div class="floor active" id="floor-pb">
@@ -940,6 +1013,7 @@
 
 <!-- SUCCESS OVERLAY -->
 <div id="successOverlay">
+  <canvas id="successFireworksCanvas"></canvas>
   <div class="success-chk-wrap">
     <div class="success-chk-ring"></div>
     <div class="success-chk-mid"></div>
@@ -1077,12 +1151,12 @@
           <div class="pago-input-row">
             <div class="pago-input-group">
               <label class="pago-label">Monto ($)</label>
-              <input type="number" class="pago-input" id="pagoMonto" placeholder="0" min="1">
+              <input type="number" class="pago-input" id="pagoMonto" placeholder="0" min="1" oninput="checkPagoBtn()">
             </div>
             <div class="pago-input-group">
               <label class="pago-label">Medio de pago</label>
               <div class="pago-select-wrap">
-                <select class="pago-select" id="pagoMedio">
+                <select class="pago-select" id="pagoMedio" onchange="checkPagoBtn()">
                   <option value="">Cargando...</option>
                 </select>
               </div>
@@ -1092,12 +1166,12 @@
           <div class="pago-input-group" id="pagoVendedorGroup" style="display:none;margin-top:4px">
             <label class="pago-label">Registrar en nombre de</label>
             <div class="pago-select-wrap">
-              <select class="pago-select" id="pagoVendedor">
+              <select class="pago-select" id="pagoVendedor" onchange="checkPagoBtn()">
                 <option value="">— Elegí vendedor —</option>
               </select>
             </div>
           </div>
-          <button class="pago-btn" id="pagoBtn" onclick="cargarPago()">Registrar pago</button>
+          <button class="pago-btn" id="pagoBtn" onclick="cargarPago()" disabled>Registrar pago</button>
           <div class="pago-msg" id="pagoMsg"></div>
         </div>
       </div>
@@ -1249,7 +1323,7 @@ let lastTap = 0;
 document.addEventListener('touchend', e => { const now=Date.now(); if(now-lastTap<300) e.preventDefault(); lastTap=now; }, {passive:false});
 
 // ── VERSIÓN DE LA APP ────────────────────────────────────────────────────────
-const APP_VERSION = 'v1.10';   // ← cambiá solo acá
+const APP_VERSION = 'v3.4';   // ← cambiá solo acá
 document.addEventListener('DOMContentLoaded', () => {
   const lv = document.getElementById('loginVersion');
   const hv = document.getElementById('headerVersion');
@@ -1257,7 +1331,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (hv) hv.textContent = APP_VERSION;
 });
 
-const API_URL = "https://script.google.com/macros/s/AKfycbw1KPZO2gNyjKoj8GDdoG6QafGNt4EHbzugcqf66eNAt9hyLmw671EBtLZpRtmVX3VHNw/exec";
+const API_URL = "https://script.google.com/macros/s/AKfycbyr1TeIqghOsVPQPxi6rrNxcEsGIEFbRtpIEtPFhQZuUZBVbKqgCJdw_vCYPxKARSi8hQ/exec";
 
 let FULL_DATA = {}, currentFloor = 'pb';
 let FERIANTES_LIST = [];
@@ -1304,82 +1378,124 @@ function renderMapUI() {
   }
 }
 
-async function load() {
-  if (!modalLocked) showLoading('Cargando mapa...');
-
-  // Dos llamados en paralelo, cada uno abre la planilla por su cuenta:
-  //  - tipo=mapa:   FERIA + PLANO PB + PLANO PA → lo mínimo para pintar el
-  //                 mapa, se muestra apenas llega, sin esperar al otro.
-  //  - tipo=ventas: feriantes + lista negra + precios + usuarios + medios →
-  //                 solo hace falta cuando alguien abre un stand para
-  //                 operar, así que puede llegar un toque después sin que
-  //                 el usuario note demora en ver el mapa.
-  const pMapa   = fetch(`${API_URL}?tipo=mapa`).then(r => r.json());
-  const pVentas = fetch(`${API_URL}?tipo=ventas`).then(r => r.json());
-
+async function load(silencioso = false) {
+  if (!modalLocked && !silencioso) showLoading('Cargando mapa...');
+  const _t0 = performance.now();
+  let _tFetch = 0, _tParse = 0;
   try {
-    const dataMapa = await pMapa;
-    if (dataMapa.ok === false) throw new Error(dataMapa.error || 'Error al cargar el mapa');
+    // El endpoint principal ahora devuelve todo en una sola respuesta
+    // (mapa + feriantes + lista negra + precios + usuarios + medios), en vez
+    // de 6 requests separados a Apps Script. Cada uno de esos 6 abría la
+    // planilla por su cuenta y competía por los mismos recursos, así que
+    // esto reduce bastante el tiempo de carga.
+    const resMap = await fetch(`${API_URL}?mes=${encodeURIComponent(CURRENT_MES)}`);
+    _tFetch = performance.now() - _t0;
 
-    FULL_DATA = dataMapa;
-    renderMapUI();
-    if (!modalLocked) hideLoading();
-  } catch(e) {
-    if (!modalLocked) hideLoading();
-    document.getElementById('subtitle').textContent = 'Error al cargar datos';
-    return; // sin datos de mapa no tiene sentido seguir con ventas acá
-  }
+    const _tParseStart = performance.now();
+    FULL_DATA = await resMap.json();
+    _tParse = performance.now() - _tParseStart;
 
-  // Los datos de "ventas" llegan por su cuenta; si fallan, el mapa ya se
-  // ve igual — solo quedan vacías las listas usadas al operar un stand
-  // (autocompletar feriante, medios de pago, combo de vendedores, etc.).
-  try {
-    const dataVentas = await pVentas;
-    FULL_DATA.feriantes  = dataVentas.feriantes;
-    FULL_DATA.listaNegra = dataVentas.listaNegra;
-    FULL_DATA.precios    = dataVentas.precios;
-    FULL_DATA.usuarios   = dataVentas.usuarios;
-    FULL_DATA.medios     = dataVentas.medios;
-
-    if (dataVentas.feriantes)  FERIANTES_LIST = dataVentas.feriantes;
-    if (dataVentas.listaNegra) LISTA_NEGRA    = dataVentas.listaNegra.map(normalizarNombre);
-    if (dataVentas.precios)    PRECIOS_MOB    = dataVentas.precios;
+    if (FULL_DATA.feriantes)  FERIANTES_LIST = FULL_DATA.feriantes;
+    if (FULL_DATA.listaNegra) LISTA_NEGRA    = FULL_DATA.listaNegra.map(normalizarNombre);
+    if (FULL_DATA.precios)    PRECIOS_MOB    = FULL_DATA.precios;
     // Usuarios/vendedores: para que el combo Admin esté disponible
     // independientemente de si hay sesión guardada o no
-    if (dataVentas.usuarios) {
-      VENDEDORES_LIST = dataVentas.usuarios
+    if (FULL_DATA.usuarios) {
+      VENDEDORES_LIST = FULL_DATA.usuarios
         .filter(u => u.perfil === 1)
         .map(u => u.nombre);
     }
-    if (dataVentas.medios) MEDIOS_PAGO = dataVentas.medios;
+    if (FULL_DATA.medios) MEDIOS_PAGO = FULL_DATA.medios;
+
+    const _tRenderStart = performance.now();
+    renderMapUI();
+    const _tRender = performance.now() - _tRenderStart;
+
+    if (!modalLocked && !silencioso) hideLoading();
+
+    // Solo mandamos los tiempos si el backend nos avisó que el perf log
+    // está prendido — así, apagado, esto no hace ni un fetch de más.
+    if (FULL_DATA.perfOn) {
+      const _tTotal = performance.now() - _t0;
+      enviarPerfFrontend('load', {
+        fetch: Math.round(_tFetch),
+        parseo: Math.round(_tParse),
+        render: Math.round(_tRender),
+        total: Math.round(_tTotal)
+      });
+    }
   } catch(e) {
-    // No hacemos nada más: el mapa ya se ve, y las funciones que usan estas
-    // listas (openModal, cargarMediosPago, etc.) ya manejan el caso de
-    // lista vacía sin romperse.
+    if (!modalLocked && !silencioso) hideLoading();
+    if (!silencioso) document.getElementById('subtitle').textContent = 'Error al cargar datos';
   }
 }
 
-// Refresca SOLO los datos de mapa (FERIA + PLANO PB/PA) contra el servidor
-// y repinta. Se usa después de escribir (asignar, pago) para traer campos
-// calculados por la planilla (como el rubro "rb") que el patch local no
-// puede conocer — a diferencia de load(), NO vuelve a pedir "ventas"
-// (feriantes/lista negra/precios/usuarios/medios), porque esos datos no
-// cambian por asignar un stand o registrar un pago, y pedirlos de nuevo acá
-// solo suma una apertura de planilla de más justo después de escribir.
-async function refreshMapaData() {
+// Manda al backend un tiempo medido en el front (fetch/parseo/render de
+// load(), por ahora) para que quede junto con los tiempos del backend en la
+// misma hoja PERF_LOG. Fire-and-forget: no se espera la respuesta ni se
+// muestra nada si falla, para no afectar en nada la experiencia del usuario.
+function enviarPerfFrontend(tipo, tiempos) {
   try {
-    const res  = await fetch(`${API_URL}?tipo=mapa`);
-    const data = await res.json();
-    if (data.ok === false) throw new Error(data.error || 'Error al actualizar el mapa');
-    FULL_DATA.pbData     = data.pbData;
-    FULL_DATA.paData     = data.paData;
-    FULL_DATA.extraData  = data.extraData;
-    renderMapUI();
+    const detalle = Object.entries(tiempos)
+      .map(([k, v]) => `${k}:${v}ms`)
+      .join(' | ');
+    const url = `${API_URL}?tipo=perflog&evento=${encodeURIComponent(tipo)}`
+      + `&mes=${encodeURIComponent(CURRENT_MES || '')}`
+      + `&ms=${encodeURIComponent(tiempos.total || 0)}`
+      + `&detalle=${encodeURIComponent(detalle)}`;
+    fetch(url).catch(() => {});
   } catch(e) {
-    // Silencioso: el patch local ya está en pantalla, esto es solo para
-    // sincronizar campos calculados; si falla, no vale la pena romper el
-    // flujo de éxito que ya se le mostró al usuario.
+    // no debe afectar nada del flujo normal
   }
+}
+
+// ── POLLING: refresco automático entre navegadores abiertos ────────────────
+// Cada CHEQUEO_MS consultamos un endpoint liviano de Apps Script que solo
+// devuelve la fecha de última modificación de la hoja FERIA (sin traer
+// datos). Si cambió respecto a la última que vimos, recién ahí pedimos el
+// mapa completo con load(true) — silencioso, sin tapar la pantalla con el
+// spinner. Así todos los que tienen la página abierta ven los cambios de
+// otros sin tener que refrescar manualmente.
+const CHEQUEO_MS = 60000; // 5 minutos (antes 5s — se espació para no competir con acciones reales)
+let ultimoTimestampConocido = null;
+let pollingTimer = null;
+let pollEnCurso = false; // evita que se apilen chequeos si el anterior (o el load(true) que dispara) todavía no terminó
+
+async function chequearActualizaciones() {
+  // No competir por red/Apps Script con una acción en curso (venta, pago,
+  // mobiliario, contrato, ingreso, etc.): esas ya van a disparar su propio
+  // load() al terminar, así que el polling puede esperar al próximo ciclo.
+  if (modalLocked) return;
+  if (pollEnCurso) return;
+  pollEnCurso = true;
+  try {
+    const res  = await fetch(`${API_URL}?tipo=timestamp&mes=${encodeURIComponent(CURRENT_MES)}`);
+    const data = await res.json();
+    if (ultimoTimestampConocido === null) {
+      // Primera lectura: solo guardamos el valor, no hace falta recargar
+      // porque load() ya trajo el mapa actualizado en el login.
+      ultimoTimestampConocido = data.ts;
+      return;
+    }
+    if (data.ts !== ultimoTimestampConocido) {
+      ultimoTimestampConocido = data.ts;
+      // modalLocked pudo haberse activado mientras esperábamos el fetch de
+      // arriba (ej. el usuario empezó una venta justo ahora); si es así,
+      // no disparamos el load(true) pesado y dejamos que el próximo ciclo
+      // (ya sin modalLocked) lo retome.
+      if (!modalLocked) await load(true);
+    }
+  } catch (e) {
+    // Falla silenciosa: si hay un corte momentáneo de red, se reintenta
+    // solo en el próximo ciclo, sin molestar al usuario.
+  } finally {
+    pollEnCurso = false;
+  }
+}
+
+function iniciarPolling() {
+  if (pollingTimer) clearInterval(pollingTimer);
+  pollingTimer = setInterval(chequearActualizaciones, CHEQUEO_MS);
 }
 
 function buildGrid(gridId, data) {
@@ -1487,6 +1603,7 @@ function switchFloor(f, btn) {
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
   applyFilters();
+  document.getElementById('scrollCollapseGroup')?.classList.remove('collapsed');
   // Esperamos al próximo repintado real (en vez de un setTimeout con tiempo fijo)
   // para que el piso ya esté visible y con su layout final antes de reaplicar el zoom.
   requestAnimationFrame(() => requestAnimationFrame(() => { aplicarZoom(); buildMinimap(); }));
@@ -1554,6 +1671,7 @@ let modalHasZoomOrigin = false;
 
 function openModal(id, evt) {
   currentStandId = id;
+  pendingFerianteFixReload = null;
   const data  = (FULL_DATA.pbData||{})[id] || (FULL_DATA.paData||{})[id] || {};
   const extra = (FULL_DATA.extraData||{})[id] || {};
   const estado = data.e || 'Disponible';
@@ -1731,6 +1849,7 @@ function openModal(id, evt) {
     const yaIngreso  = extra.ingreso === 'SI';
     const contratoOk = extra.contrato === 'SI';
     const pagadoOk   = estado === 'Pagado';
+    const senadoOk   = estado === 'Señado';
 
     ingresoSection.style.display = 'block';
     contratoBtn.style.display = 'none';
@@ -1747,13 +1866,16 @@ function openModal(id, evt) {
       ingresoBtn.textContent = '🚪 Dar ingreso';
       ingresoInfo.textContent = '';
       ingresoInfo.className = 'ingreso-info';
-    } else if (pagadoOk && !contratoOk) {
-      // Pagado al 100% pero falta firmar el contrato: se ofrece confirmarlo acá mismo.
+    } else if (!contratoOk && (pagadoOk || senadoOk)) {
+      // Pagado o Señado pero falta firmar el contrato: se ofrece confirmarlo acá mismo,
+      // sin necesidad de esperar a que el stand esté 100% pagado.
       ingresoBtn.style.display = 'none';
       contratoBtn.style.display = 'block';
       contratoBtn.disabled = false;
       contratoBtn.textContent = '✍️ Confirmar firma de contrato';
-      ingresoInfo.textContent = '⏳ Falta el contrato firmado para poder dar el ingreso.';
+      ingresoInfo.textContent = pagadoOk
+        ? '⏳ Falta el contrato firmado para poder dar el ingreso.'
+        : '✍️ Podés confirmar la firma del contrato aunque el stand siga Señado. Para dar el ingreso además va a faltar completar el pago.';
       ingresoInfo.className = 'ingreso-info pending';
     } else {
       ingresoBtn.style.display = 'none';
@@ -1953,11 +2075,23 @@ async function asignarFeriante() {
     const mobParams = MOB_ITEMS.map(m => `${m.key}=${mobQty[m.key]||0}`).join('&');
     const adminParam = (CURRENT_PERFIL === 3 && vendedor) ? `&admin=${encodeURIComponent(CURRENT_USER)}` : '';
     const nuevoParam = selectedFerianteEsNuevo ? '&nuevo=SI' : '&nuevo=NO';
-    const urlAsignar = `${API_URL}?tipo=asignar&stand=${encodeURIComponent(currentStandId)}&feriante=${encodeURIComponent(feriante)}&user=${encodeURIComponent(responsableAsign)}&${mobParams}${adminParam}${nuevoParam}`;
+    const urlAsignar = `${API_URL}?tipo=asignar&mes=${encodeURIComponent(CURRENT_MES)}&stand=${encodeURIComponent(currentStandId)}&feriante=${encodeURIComponent(feriante)}&user=${encodeURIComponent(responsableAsign)}&${mobParams}${adminParam}${nuevoParam}`;
     const resAsignar = await fetch(urlAsignar);
     const dataAsignar = await resAsignar.json();
     if (!dataAsignar.ok) {
-      msgEl.textContent = dataAsignar.error || 'Error al asignar el feriante.';
+      const errorMsg = dataAsignar.error || 'Error al asignar el feriante.';
+      if (errorMsg.includes('lista autorizada')) {
+        // Caso: el feriante quedó desactualizado en el cliente (ej. se borró
+        // y volvió a cargar en la hoja mientras este navegador tenía el mapa
+        // viejo abierto). Avisamos y disparamos el reload del mapa/feriantes
+        // ya mismo, sin esperar a que cierre el popup — guardamos la promesa
+        // para poder esperarla si cierra antes de que termine (ver
+        // closeModal() y el swipe-down más abajo).
+        msgEl.textContent = `⚠️ ${errorMsg}. Estamos actualizando la lista de feriantes — cerrá esta ficha e intentá de nuevo.`;
+        pendingFerianteFixReload = load();
+      } else {
+        msgEl.textContent = errorMsg;
+      }
       msgEl.className = 'assign-msg err';
       clearBtnBusy(btn, 'Asignar y señar');
       modalLocked = false;
@@ -1967,7 +2101,7 @@ async function asignarFeriante() {
 
     // Paso 2: registrar pago 1
     const vendedorParam = (CURRENT_PERFIL === 3 && vendedor) ? `&vendedor=${encodeURIComponent(vendedor)}` : '';
-    const urlPago = `${API_URL}?tipo=pago&stand=${encodeURIComponent(currentStandId)}&num=1&monto=${monto}&medio=${encodeURIComponent(medio)}&user=${encodeURIComponent(CURRENT_USER)}${vendedorParam}`;
+    const urlPago = `${API_URL}?tipo=pago&mes=${encodeURIComponent(CURRENT_MES)}&stand=${encodeURIComponent(currentStandId)}&num=1&monto=${monto}&medio=${encodeURIComponent(medio)}&user=${encodeURIComponent(CURRENT_USER)}${vendedorParam}`;
     const resPago = await fetch(urlPago);
     const dataPago = await resPago.json();
     if (!dataPago.ok) {
@@ -2005,13 +2139,12 @@ async function asignarFeriante() {
     // El patch local de arriba no puede conocer campos que el backend/planilla
     // calculan solos (como el rubro "rb", que sale de una fórmula en la hoja
     // FERIA). Por eso, igual que se hace en cargarPago() cuando un pago salda
-    // la deuda, disparamos un refresco del mapa en paralelo (no hace falta
-    // volver a pedir "ventas" — no cambia por asignar un stand). Como
-    // modalLocked ya está en true, corre calladito atrás de la pantalla de
-    // éxito. Si el usuario aprieta "Continuar" antes de que termine,
-    // showSuccessOverlay se encarga de esperarlo.
-    const mapLoadPromise = refreshMapaData();
-    await showSuccessOverlay('Stand cargado', `${feriante} · Puesto ${currentStandId}`, mapLoadPromise);
+    // la deuda, disparamos un load() real en paralelo — como modalLocked ya
+    // está en true, load() no muestra su propio spinner y corre calladito
+    // atrás de la pantalla de éxito. Si el usuario aprieta "Continuar" antes
+    // de que termine, showSuccessOverlay se encarga de esperarlo.
+    const mapLoadPromise = load();
+    await showSuccessOverlay('Stand cargado', `${feriante} · Puesto ${currentStandId}`, mapLoadPromise, 'fireworks');
     document.getElementById('modalOverlay').classList.remove('open');
     modalLocked = false;
     setAssignFieldsDisabled(false);
@@ -2028,6 +2161,14 @@ async function asignarFeriante() {
 }
 
 let modalLocked = false;
+
+// Promesa de un load() disparado por asignarFeriante() cuando el backend
+// rechaza el feriante por estar desactualizado en el cliente (ver ahí
+// arriba). Si hay una pendiente, closeModal() y el swipe-down la esperan
+// (mostrando la ruedita) antes de cerrar, para no cerrar "a mitad" de la
+// recarga. Se resetea en openModal() para no quedar pisando cierres futuros
+// que no tengan nada que ver con este caso puntual.
+let pendingFerianteFixReload = null;
 
 // ── LOADING OVERLAY ──────────────────────────────────────────────────────────
 let _loadingInterval = null;
@@ -2114,13 +2255,87 @@ function playSuccessSound() {
   _successTone(ctx, 3135,    t + 0.24, 0.5,  { type: 'sine',     gain: 0.05 }); // armónico de la cola
 }
 
-// Overlay de éxito (check animado, pantalla completa) para la confirmación
-// de carga de stand. Se muestra apenas se confirma la asignación/seña, y
-// queda fijo hasta que el usuario aprieta "Continuar". El mapa se recarga
-// de fondo mientras tanto (mapLoadPromise); si el usuario aprieta el botón
-// antes de que esa recarga termine, se muestra la ruedita de carga hasta
-// que esté lista.
-function showSuccessOverlay(title, subtitle, mapLoadPromise = Promise.resolve()) {
+// Sonido de "chispitas" para los fuegos artificiales de la venta — más
+// picado que el cha-ching, cinco pops cortos espaciados que acompañan las
+// 5 explosiones de fireworksEffect().
+function playFireworksSound() {
+  const ctx = _getSuccessAudioCtx();
+  if (!ctx) return;
+  const t = ctx.currentTime;
+  const freqs = [1800, 2400, 3000, 2100, 2700];
+  freqs.forEach((f, i) => _successTone(ctx, f, t + i * 0.28, 0.35, { type: 'square', gain: 0.06 }));
+}
+
+const FIREWORKS_COLORS = ['#ff6b6b', '#ffd60a', '#30d158', '#007aff', '#5e5ce6', '#ff9f0a'];
+let _fireworksRaf = null;
+let _fireworksTimeouts = [];
+
+// Animación de fuegos artificiales (5 explosiones con estela, repartidas por
+// la pantalla) para la confirmación de VENTA. Dibuja sobre
+// #successFireworksCanvas, que queda detrás del check/título/botón (esos
+// tienen z-index propio, ver CSS). Se limpia sola sola a los ~2.6s; si el
+// overlay se cierra antes (usuario apretó Continuar), stopFireworksEffect()
+// corta la animación en el acto.
+function fireworksEffect() {
+  const canvas = document.getElementById('successFireworksCanvas');
+  if (!canvas) return;
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  const c = canvas.getContext('2d');
+  c.clearRect(0, 0, canvas.width, canvas.height);
+
+  const spots = [[.2, .3], [.8, .25], [.5, .18], [.35, .55], [.65, .5]];
+  let particles = [];
+  spots.forEach((s, i) => {
+    _fireworksTimeouts.push(setTimeout(() => {
+      const x = canvas.width * s[0], y = canvas.height * s[1];
+      for (let k = 0; k < 38; k++) {
+        const a = Math.random() * Math.PI * 2, sp = 2.5 + Math.random() * 5.5;
+        particles.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1, color: FIREWORKS_COLORS[Math.floor(Math.random() * FIREWORKS_COLORS.length)] });
+      }
+    }, i * 280));
+  });
+
+  const t0 = performance.now();
+  function frame(t) {
+    c.clearRect(0, 0, canvas.width, canvas.height);
+    particles.forEach(p => {
+      p.vy += 0.045; p.x += p.vx; p.y += p.vy; p.life -= 0.012;
+      c.globalAlpha = Math.max(p.life, 0);
+      c.fillStyle = p.color;
+      c.beginPath(); c.arc(p.x, p.y, 2.8, 0, Math.PI * 2); c.fill();
+    });
+    c.globalAlpha = 1;
+    particles = particles.filter(p => p.life > 0);
+    if (t - t0 < 2600) {
+      _fireworksRaf = requestAnimationFrame(frame);
+    } else {
+      c.clearRect(0, 0, canvas.width, canvas.height);
+    }
+  }
+  _fireworksRaf = requestAnimationFrame(frame);
+}
+
+function stopFireworksEffect() {
+  if (_fireworksRaf) cancelAnimationFrame(_fireworksRaf);
+  _fireworksRaf = null;
+  _fireworksTimeouts.forEach(clearTimeout);
+  _fireworksTimeouts = [];
+  const canvas = document.getElementById('successFireworksCanvas');
+  if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+}
+
+// Overlay de éxito (check animado, pantalla completa) para confirmaciones.
+// Se muestra apenas se confirma la acción, y queda fijo hasta que el
+// usuario aprieta "Continuar". El mapa se recarga de fondo mientras tanto
+// (mapLoadPromise); si el usuario aprieta el botón antes de que esa
+// recarga termine, se muestra la ruedita de carga hasta que esté lista.
+//
+// `effect`: 'check' (default, check verde + cha-ching de siempre) o
+// 'fireworks' (fuegos artificiales + sonido de chispitas) — se usa
+// SOLO para la venta del stand (asignarFeriante), el resto de las
+// confirmaciones (ingreso, contrato, etc.) siguen con 'check'.
+function showSuccessOverlay(title, subtitle, mapLoadPromise = Promise.resolve(), effect = 'check') {
   return new Promise(resolve => {
     const overlay = document.getElementById('successOverlay');
     const btn = document.getElementById('successContinueBtn');
@@ -2133,34 +2348,48 @@ function showSuccessOverlay(title, subtitle, mapLoadPromise = Promise.resolve())
 
     overlay.classList.add('visible');
     requestAnimationFrame(() => overlay.classList.add('shown'));
-    playSuccessSound();
+
+    if (effect === 'fireworks') {
+      playFireworksSound();
+      fireworksEffect();
+      if (navigator.vibrate) navigator.vibrate([100, 150, 60, 150, 100, 150, 60, 150, 100]);
+    } else {
+      playSuccessSound();
+    }
 
     let mapReady = false;
     mapLoadPromise.then(() => { mapReady = true; }).catch(() => { mapReady = true; });
 
-    const finish = () => {
+    // Cierra el cartel de éxito (animación + remover del DOM visual).
+    // Importante: esto pasa SIEMPRE apenas se aprieta "Continuar", sin
+    // esperar a que el mapa termine de actualizarse.
+    const closeOverlay = () => {
       overlay.classList.remove('shown');
-      setTimeout(() => {
-        overlay.classList.remove('visible');
-        resolve();
-      }, 200);
+      stopFireworksEffect();
+      setTimeout(() => overlay.classList.remove('visible'), 200);
     };
 
     const onContinue = () => {
       btn.removeEventListener('click', onContinue);
+
+      // Antes, si el mapa todavía se estaba actualizando, se llamaba a
+      // showLoading() mientras el cartel de éxito seguía visible y tapando
+      // todo (mismo z-index más alto que el de la ruedita) — entonces
+      // parecía que el botón no hacía nada. Ahora el cartel se cierra de
+      // una, y la ruedita (si hace falta) aparece después, ya visible.
+      closeOverlay();
+
       if (mapReady) {
-        finish();
+        resolve();
         return;
       }
-      // El mapa todavía se está actualizando: recién acá mostramos la
-      // ruedita de carga, y cerramos todo cuando termine.
       showLoading('Actualizando mapa...');
       mapLoadPromise.then(() => {
         hideLoading();
-        finish();
+        resolve();
       }).catch(() => {
         hideLoading();
-        finish();
+        resolve();
       });
     };
 
@@ -2191,6 +2420,7 @@ function showToast(msg, type = 'ok', duration = 2500) {
   el.className = `toast ${type}`;
   el.textContent = msg;
   container.appendChild(el);
+  if (navigator.vibrate) navigator.vibrate(100);
   if (type === 'ok') playToastSound();
   _toastTimer = setTimeout(() => {
     el.classList.add('out');
@@ -2225,9 +2455,29 @@ function unlockModal() {
   hideLoading();
 }
 
-function closeModal(e) {
+async function closeModal(e) {
   if (modalLocked) return;
   if (!e || e.target===document.getElementById('modalOverlay') || e.currentTarget.tagName==='BUTTON') {
+    // Si asignarFeriante() disparó un reload por feriante desactualizado y
+    // todavía no terminó, lo esperamos acá antes de cerrar — mostrando la
+    // ruedita para que el usuario sepa que hay algo en curso — así al volver
+    // a abrir el stand ya tiene el mapa y la lista de feriantes al día.
+    if (pendingFerianteFixReload) {
+      const reload = pendingFerianteFixReload;
+      pendingFerianteFixReload = null;
+      lockModal('Actualizando mapa...');
+      try { await reload; } catch(err) {}
+      unlockModal();
+    }
+    await ejecutarCierreModal();
+  }
+}
+
+// Animación de cierre del modal, separada de closeModal() para poder
+// reusarla desde el swipe-down (que hoy la dispara sin pasar por
+// closeModal()).
+function ejecutarCierreModal() {
+  return new Promise(resolve => {
     const modalEl = document.querySelector('.modal');
     if (modalHasZoomOrigin) {
       modalEl.style.transition = 'transform .32s cubic-bezier(.36,0,.66,-0.01), opacity .28s ease';
@@ -2239,15 +2489,17 @@ function closeModal(e) {
         modalEl.style.transform      = '';
         modalEl.style.opacity        = '';
         modalEl.style.transformOrigin = '';
+        resolve();
       }, 320);
     } else {
       modalEl.classList.add('closing');
       setTimeout(() => {
         document.getElementById('modalOverlay').classList.remove('open');
         modalEl.classList.remove('closing');
+        resolve();
       }, 360);
     }
-  }
+  });
 }
 
 const ZOOM_STEPS = [0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3];
@@ -2493,11 +2745,46 @@ function scheduleMinimapViewportUpdate() {
   if (minimapRaf) return;
   minimapRaf = requestAnimationFrame(() => { minimapRaf = null; updateMinimapViewport(); });
 }
+
+// ── OCULTAR/MOSTRAR BARRA DE OCUPACIÓN + TABS + BUSCADOR AL SCROLLEAR ──────
+// Regla simple a propósito (nada de calcular dirección/velocidad entre
+// eventos, que en mobile con scroll por inercia manda eventos salteados e
+// irregulares y termina "flasheando" a mitad de la transición): apenas el
+// scroll se despega del top se oculta, y SOLO vuelve a aparecer cuando se
+// llega de nuevo al top (scrollTop ~ 0) — no con cualquier scroll hacia
+// arriba. Cada piso (.map-scroll) es independiente.
+const SCROLL_COLLAPSE_TOP_EPSILON_PX = 2; // margen para considerar "está en el top"
+
+function handleScrollCollapse(scrollEl) {
+  const group = document.getElementById('scrollCollapseGroup');
+  if (!group) return;
+  const top = Math.max(0, scrollEl.scrollTop);
+  if (top <= SCROLL_COLLAPSE_TOP_EPSILON_PX) {
+    group.classList.remove('collapsed');
+  } else {
+    group.classList.add('collapsed');
+  }
+}
+
+// Mide la altura real del grupo (occ-bar + tabs + buscador) y la guarda en
+// una variable CSS, para que la animación de max-height sepa hasta dónde
+// expandirse. scrollHeight da la altura real del contenido sin importar que
+// hoy esté clippeado por overflow:hidden/max-height — por eso no hace falta
+// sacarle la clase "collapsed" para medir. Se llama al cargar y en cada
+// resize (cambio de orientación del celular, teclado que aparece, etc.).
+function updateScrollCollapseMaxHeight() {
+  const group = document.getElementById('scrollCollapseGroup');
+  if (!group) return;
+  group.style.setProperty('--scroll-collapse-h', group.scrollHeight + 'px');
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  updateScrollCollapseMaxHeight();
   document.querySelectorAll('.map-scroll').forEach(el => {
     el.addEventListener('scroll', scheduleMinimapViewportUpdate, { passive: true });
+    el.addEventListener('scroll', () => handleScrollCollapse(el), { passive: true });
   });
-  window.addEventListener('resize', scheduleMinimapViewportUpdate);
+  window.addEventListener('resize', () => { scheduleMinimapViewportUpdate(); updateScrollCollapseMaxHeight(); });
 });
 
 // Recentra el mapa automáticamente cada vez que cambia el tamaño del
@@ -2517,7 +2804,7 @@ if (window.ResizeObserver) {
 }
 // Pasada extra de seguridad: cuando TODO terminó de cargar (imágenes,
 // fuentes, todo), volvemos a centrar una vez más por las dudas.
-window.addEventListener('load', () => { aplicarZoom(); buildMinimap(); });
+window.addEventListener('load', () => { aplicarZoom(); buildMinimap(); updateScrollCollapseMaxHeight(); });
 // ── BIOMÉTRICO (WebAuthn) ────────────────────────────────────────────────────
 const BIO_STORAGE_KEY = 'feriaBioCredential'; // { user, perfil, credentialId (base64) }
 
@@ -2551,7 +2838,7 @@ async function registrarBiometrico(user, perfil) {
     const userId    = new TextEncoder().encode(user);
     const cred = await navigator.credentials.create({ publicKey: {
       challenge,
-      rp: { name: 'Feria Septiembre 2026' },
+      rp: { name: 'Feria SUCOVI 2026' },
       user: { id: userId, name: user, displayName: user },
       pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
       authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
@@ -2583,10 +2870,20 @@ async function loginConBiometrico() {
       userVerification: 'required',
       timeout: 60000
     }});
-    // Verificación local exitosa → activar sesión directamente
+    // Verificación local exitosa → guardamos la sesión, pero como este flujo
+    // no pasa por doLogin() todavía no sabemos qué meses están habilitados;
+    // los pedimos aparte antes de activar la sesión.
     sessionStorage.setItem('feriaUser',   saved.user);
     sessionStorage.setItem('feriaPerfil', String(saved.perfil));
-    activarSesion(saved.user, saved.perfil);
+    try {
+      const resM  = await fetch(`${API_URL}?tipo=meses`);
+      const dataM = await resM.json();
+      procesarLoginExitoso(saved.user, saved.perfil, dataM.ok ? dataM.meses : []);
+    } catch(errM) {
+      errEl.textContent = 'Error de conexión al cargar las ferias disponibles.';
+      btn.disabled = false;
+      btn.innerHTML = '<span style="font-size:20px">🪪</span> Entrar sin contraseña';
+    }
   } catch(e) {
     // Si cancela o falla, mostrar el formulario normal para entrar con contraseña
     errEl.textContent = 'Verificación cancelada. Ingresá con tu contraseña.';
@@ -2619,25 +2916,97 @@ function mostrarBtnBio() {
 }
 
 // ── LOGIN ────────────────────────────────────────────────────────────────────
-let CURRENT_USER   = null;
-let CURRENT_PERFIL = 1;   // 1=VENDEDOR, 2=VISUALIZADOR, 3=ADMIN
+let CURRENT_USER      = null;
+let CURRENT_PERFIL    = 1;   // 1=VENDEDOR, 2=VISUALIZADOR, 3=ADMIN
+let CURRENT_MES       = null;  // Clave del mes elegido (ej. "2026-03") — viaja en cada llamada a la API
+let CURRENT_MES_LABEL = '';    // Label para mostrar (ej. "Marzo 2026")
+let MESES_PENDIENTES  = null;  // {user, perfil} mientras se espera que el usuario elija el mes
 
-async function initLogin() {
-  // ¿Ya hay sesión activa?
-  const saved = sessionStorage.getItem('feriaUser');
-  if (saved) {
-    const savedPerfil = parseInt(sessionStorage.getItem('feriaPerfil') || '1', 10) || 1;
-    activarSesion(saved, savedPerfil);
+// Se llama después de un login exitoso (por password o biométrico), con la
+// lista de meses habilitados que devolvió el backend. Si hay uno solo, lo
+// selecciona automático y entra directo; si hay más de uno, muestra el
+// selector; si no hay ninguno, no deja entrar.
+function procesarLoginExitoso(user, perfil, meses) {
+  meses = meses || [];
+
+  if (meses.length === 0) {
+    const errEl = document.getElementById('loginError');
+    if (errEl) errEl.textContent = 'No hay ninguna feria habilitada en este momento.';
+    sessionStorage.removeItem('feriaUser');
+    sessionStorage.removeItem('feriaPerfil');
+    const btn = document.getElementById('loginBtn');
+    if (btn) { btn.disabled = false; btn.textContent = 'Ingresar'; }
     return;
   }
-  // ¿Hay credencial biométrica guardada? → mostrar el botón y esperar el tap
-  // del usuario. IMPORTANTE: no se dispara loginConBiometrico() automáticamente
-  // acá, porque muchos navegadores (sobre todo Safari/iOS) exigen un gesto
-  // explícito del usuario para navigator.credentials.get(); si se llama sola
-  // al cargar la página, la promesa puede quedar colgada hasta el timeout de
-  // 60s, dejando el botón trabado en "Verificando...".
+
+  if (meses.length === 1) {
+    CURRENT_MES       = meses[0].clave;
+    CURRENT_MES_LABEL = meses[0].mes;
+    sessionStorage.setItem('feriaMes', CURRENT_MES);
+    sessionStorage.setItem('feriaMesLabel', CURRENT_MES_LABEL);
+    activarSesion(user, perfil);
+    return;
+  }
+
+  // Más de un mes habilitado: mostrar selector antes de entrar
+  MESES_PENDIENTES = { user, perfil };
+  const sel = document.getElementById('mesSelect');
+  sel.innerHTML = meses.map(m => `<option value="${m.clave}">${m.mes}</option>`).join('');
+  document.getElementById('loginScreen').classList.add('hidden');
+  document.getElementById('mesScreen').classList.remove('hidden');
+}
+
+function confirmarMes() {
+  if (!MESES_PENDIENTES) return;
+  const sel   = document.getElementById('mesSelect');
+  const clave = sel.value;
+  const label = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent : '';
+  if (!clave) {
+    document.getElementById('mesError').textContent = 'Elegí un mes';
+    return;
+  }
+  CURRENT_MES       = clave;
+  CURRENT_MES_LABEL = label;
+  sessionStorage.setItem('feriaMes', CURRENT_MES);
+  sessionStorage.setItem('feriaMesLabel', CURRENT_MES_LABEL);
+  document.getElementById('mesScreen').classList.add('hidden');
+  const { user, perfil } = MESES_PENDIENTES;
+  MESES_PENDIENTES = null;
+  activarSesion(user, perfil);
+}
+
+async function initLogin() {
+  // ¿Ya hay sesión activa (usuario Y mes)?
+  const savedUser = sessionStorage.getItem('feriaUser');
+  const savedMes  = sessionStorage.getItem('feriaMes');
+  if (savedUser && savedMes) {
+    const savedPerfil = parseInt(sessionStorage.getItem('feriaPerfil') || '1', 10) || 1;
+    CURRENT_MES       = savedMes;
+    CURRENT_MES_LABEL = sessionStorage.getItem('feriaMesLabel') || '';
+    activarSesion(savedUser, savedPerfil);
+    return;
+  }
+  // Caso raro: había sesión de usuario guardada pero no se llegó a elegir el
+  // mes (ej. se cerró el navegador justo entre el login y la selección).
+  // Volvemos a pedir los meses habilitados sin pedirle la contraseña de nuevo.
+  if (savedUser && !savedMes) {
+    const savedPerfil = parseInt(sessionStorage.getItem('feriaPerfil') || '1', 10) || 1;
+    try {
+      const res  = await fetch(API_URL + '?tipo=meses');
+      const data = await res.json();
+      procesarLoginExitoso(savedUser, savedPerfil, data.ok ? data.meses : []);
+      return;
+    } catch(err) {
+      sessionStorage.removeItem('feriaUser');
+      sessionStorage.removeItem('feriaPerfil');
+      // Si falla, seguimos de largo hacia la pantalla de login normal
+    }
+  }
+  // ¿Hay credencial biométrica guardada? → disparar directo, sin pedir contraseña
   if (bioDisponible() && localStorage.getItem(BIO_STORAGE_KEY)) {
     mostrarBtnBio();
+    loginConBiometrico(); // si el usuario cancela, queda el botón + el form abajo
+    return;
   }
   // Cargar lista de usuarios para el combo del login
   try {
@@ -2687,7 +3056,8 @@ async function doLogin() {
       if (bioDisponible() && !localStorage.getItem(BIO_STORAGE_KEY)) {
         registrarBiometrico(data.user, perfil); // no bloqueante
       }
-      activarSesion(data.user, perfil);
+      // El login ya trae la lista de meses habilitados en la misma respuesta
+      procesarLoginExitoso(data.user, perfil, data.meses);
     } else {
       errEl.textContent = data.error || 'Usuario o contraseña incorrectos';
     }
@@ -2705,6 +3075,17 @@ function activarSesion(user, perfil) {
   document.getElementById('userPillName').textContent = user;
   const avatarEl = document.getElementById('userPillAvatar');
   if (avatarEl) avatarEl.textContent = (user || '?').charAt(0).toUpperCase();
+  // El mes ya se muestra bien a la vista como badge debajo del título del
+  // header (headerMesBadge); no hace falta repetirlo en la píldora de usuario.
+  const mesBadgeEl = document.getElementById('headerMesBadge');
+  if (mesBadgeEl) {
+    if (CURRENT_MES_LABEL) {
+      mesBadgeEl.textContent = CURRENT_MES_LABEL;
+      mesBadgeEl.style.display = 'inline-block';
+    } else {
+      mesBadgeEl.style.display = 'none';
+    }
+  }
   // Mostrar badge de perfil en la píldora de usuario
   const pillEl = document.getElementById('userPill');
   pillEl.style.display = 'inline-flex';
@@ -2725,12 +3106,15 @@ function activarSesion(user, perfil) {
   const noIngresadosBtn = document.getElementById('filtroNoIngresadosBtn');
   if (noIngresadosBtn) noIngresadosBtn.style.display = (CURRENT_PERFIL === 3) ? '' : 'none';
   load(); // carga el mapa recién después del login
+  iniciarPolling(); // a partir de ahora, chequea cada CHEQUEO_MS si hubo cambios
 }
 
 function cerrarSesion() {
   if (!confirm('¿Cerrar sesión?')) return;
   sessionStorage.removeItem('feriaUser');
   sessionStorage.removeItem('feriaPerfil');
+  sessionStorage.removeItem('feriaMes');
+  sessionStorage.removeItem('feriaMesLabel');
   location.reload();
 }
 
@@ -2741,7 +3125,7 @@ let pagoNumActual = 0;
 async function cargarMediosPago() {
   if (MEDIOS_PAGO.length) return;
   try {
-    const res  = await fetch(`${API_URL}?tipo=medios`);
+    const res  = await fetch(`${API_URL}?tipo=medios&mes=${encodeURIComponent(CURRENT_MES)}`);
     const data = await res.json();
     if (data.ok && data.medios) MEDIOS_PAGO = data.medios;
   } catch(e) { MEDIOS_PAGO = []; }
@@ -2794,6 +3178,7 @@ function renderPagos(extra, soloHechos) {
   pagoNumActual = siguiente.num;
   document.getElementById('pagoFormTitle').textContent = `Cargar Pago ${siguiente.num}`;
   document.getElementById('pagoMonto').value = '';
+  document.getElementById('pagoBtn').disabled = true;
   pagoForm.style.display = 'flex';
   cargarMediosPago().then(() => {
     const sel = document.getElementById('pagoMedio');
@@ -2813,7 +3198,33 @@ function renderPagos(extra, soloHechos) {
     } else {
       vendedorGroup.style.display = 'none';
     }
+    checkPagoBtn();
   });
+}
+
+function checkPagoBtn() {
+  const btn   = document.getElementById('pagoBtn');
+  const msgEl = document.getElementById('pagoMsg');
+  const monto = Number(document.getElementById('pagoMonto').value);
+  const medio = document.getElementById('pagoMedio').value.trim();
+  const extra = (FULL_DATA.extraData||{})[currentStandId] || {};
+  const debe  = Number(extra.d || 0);
+
+  // Vendedor: obligatorio solo si el combo está visible (perfil Admin)
+  const vendedorGroup = document.getElementById('pagoVendedorGroup');
+  const vendedorOk = (vendedorGroup.style.display === 'none')
+    || !!document.getElementById('pagoVendedor').value.trim();
+
+  // Validar monto vs Debe, igual que al guardar
+  if (monto > 0 && debe > 0 && monto > debe) {
+    msgEl.textContent = `El monto no puede superar el Debe ($${debe.toLocaleString('es-AR')}).`;
+    msgEl.className   = 'pago-msg err';
+    btn.disabled = true;
+    return;
+  }
+  msgEl.textContent = '';
+  msgEl.className   = 'pago-msg';
+  btn.disabled = !(monto > 0 && medio && vendedorOk);
 }
 
 async function cargarPago() {
@@ -2840,7 +3251,7 @@ async function cargarPago() {
   setBtnBusy(btn, 'Guardando...');
   try {
     const vendedorParam = vendedor ? `&vendedor=${encodeURIComponent(vendedor)}` : '';
-    const url  = `${API_URL}?tipo=pago&stand=${encodeURIComponent(currentStandId)}&num=${pagoNumActual}&monto=${monto}&medio=${encodeURIComponent(medio)}&user=${encodeURIComponent(CURRENT_USER)}${vendedorParam}`;
+    const url  = `${API_URL}?tipo=pago&mes=${encodeURIComponent(CURRENT_MES)}&stand=${encodeURIComponent(currentStandId)}&num=${pagoNumActual}&monto=${monto}&medio=${encodeURIComponent(medio)}&user=${encodeURIComponent(CURRENT_USER)}${vendedorParam}`;
     const res  = await fetch(url);
     const data = await res.json();
     if (data.ok) {
@@ -2870,7 +3281,7 @@ async function cargarPago() {
         setBtnBusy(btn, 'Actualizando mapa...');
         await new Promise(r => setTimeout(r, 900));
         lockModal('Actualizando mapa...');
-        await refreshMapaData();
+        await load();
         document.getElementById('modalOverlay').classList.remove('open');
         unlockModal();
       } else {
@@ -2963,6 +3374,7 @@ async function guardarNuevoFeriante() {
   try {
     const params = new URLSearchParams({
       tipo:    'altaferiante',
+      mes:     CURRENT_MES,
       nombre,
       tipof:   tipo,
       rubro,
@@ -3254,7 +3666,7 @@ async function venderMobAdicional() {
 
   try {
     const mobParams = MOB_ITEMS.map(m => `${m.key}=${mobAdicionalQty[m.key]||0}`).join('&');
-    const url = `${API_URL}?tipo=mobadic&stand=${encodeURIComponent(currentStandId)}&monto=${total}&medio=${encodeURIComponent(medio)}&user=${encodeURIComponent(CURRENT_USER)}&mobdesc=${encodeURIComponent(mobDesc)}&${mobParams}`;
+    const url = `${API_URL}?tipo=mobadic&mes=${encodeURIComponent(CURRENT_MES)}&stand=${encodeURIComponent(currentStandId)}&monto=${total}&medio=${encodeURIComponent(medio)}&user=${encodeURIComponent(CURRENT_USER)}&mobdesc=${encodeURIComponent(mobDesc)}&${mobParams}`;
     const res  = await fetch(url);
     const data = await res.json();
     if (data.ok) {
@@ -3325,7 +3737,7 @@ async function guardarComentario() {
   setBtnBusy(btn, 'Guardando...');
 
   try {
-    const url  = `${API_URL}?tipo=comentario&stand=${encodeURIComponent(currentStandId)}&user=${encodeURIComponent(CURRENT_USER)}&texto=${encodeURIComponent(texto)}`;
+    const url  = `${API_URL}?tipo=comentario&mes=${encodeURIComponent(CURRENT_MES)}&stand=${encodeURIComponent(currentStandId)}&user=${encodeURIComponent(CURRENT_USER)}&texto=${encodeURIComponent(texto)}`;
     const res  = await fetch(url);
     const data = await res.json();
     if (data.ok) {
@@ -3380,7 +3792,7 @@ async function confirmarContrato() {
 
   setBtnBusy(btn, 'Confirmando...');
   try {
-    const url  = `${API_URL}?tipo=contrato&stand=${encodeURIComponent(currentStandId)}&user=${encodeURIComponent(CURRENT_USER)}`;
+    const url  = `${API_URL}?tipo=contrato&mes=${encodeURIComponent(CURRENT_MES)}&stand=${encodeURIComponent(currentStandId)}&user=${encodeURIComponent(CURRENT_USER)}`;
     const res  = await fetch(url);
     const data = await res.json();
 
@@ -3454,7 +3866,10 @@ async function confirmarContrato() {
       ingresoBtnEl2.textContent = '🚪 Dar ingreso';
 
       clearBtnBusy(btn, '✍️ Confirmar firma de contrato');
-      msgEl.textContent = '⚠️ Este contrato ya había sido firmado. No se registró nada nuevo.';
+      msgEl.textContent = `⚠️ Este contrato ya había sido firmado`
+        + (data.user  ? ` por ${data.user}`   : '')
+        + (data.fecha ? ` (${data.fecha})`    : '')
+        + `. No se registró nada nuevo.`;
       msgEl.className = 'ingreso-msg err';
 
     } else {
@@ -3484,7 +3899,7 @@ async function darIngreso() {
 
   setBtnBusy(btn, 'Registrando...');
   try {
-    const url  = `${API_URL}?tipo=ingreso&stand=${encodeURIComponent(currentStandId)}&user=${encodeURIComponent(CURRENT_USER)}`;
+    const url  = `${API_URL}?tipo=ingreso&mes=${encodeURIComponent(CURRENT_MES)}&stand=${encodeURIComponent(currentStandId)}&user=${encodeURIComponent(CURRENT_USER)}`;
     const res  = await fetch(url);
     const data = await res.json();
 
@@ -3512,8 +3927,13 @@ async function darIngreso() {
       if (!FULL_DATA.extraData[currentStandId]) FULL_DATA.extraData[currentStandId] = {};
       const exIng = FULL_DATA.extraData[currentStandId];
       exIng.ingreso      = 'SI';
+      exIng.ingresoUser  = data.user  || '';
+      exIng.ingresoFecha = data.fecha || '';
 
-      msgEl.textContent = '⚠️ Este stand ya había sido ingresado. No se registró nada nuevo.';
+      msgEl.textContent = `⚠️ Este stand ya había sido ingresado`
+        + (data.user  ? ` por ${data.user}`   : '')
+        + (data.fecha ? ` (${data.fecha})`    : '')
+        + `. No se registró nada nuevo.`;
       msgEl.className = 'ingreso-msg err';
       btn.style.display = 'none'; // ya no corresponde reintentar
       renderMapUI();
@@ -3560,9 +3980,20 @@ initLogin();
     modalEl.style.transition = '';
     if (delta > 90) {
       modalEl.style.transform = `translateY(110%)`;
-      setTimeout(() => {
+      setTimeout(async () => {
         overlay.classList.remove('open');
         modalEl.style.transform = '';
+        // Mismo chequeo que closeModal(): si asignarFeriante() dejó un
+        // reload en curso por feriante desactualizado, lo esperamos acá
+        // mostrando la ruedita, para que quede reflejado antes de que el
+        // usuario vuelva a intentar.
+        if (pendingFerianteFixReload) {
+          const reload = pendingFerianteFixReload;
+          pendingFerianteFixReload = null;
+          lockModal('Actualizando mapa...');
+          try { await reload; } catch(err) {}
+          unlockModal();
+        }
       }, 260);
     } else {
       modalEl.style.transform = '';
